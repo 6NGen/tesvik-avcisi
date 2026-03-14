@@ -17,14 +17,14 @@ final tesviklerProvider = StreamProvider<List<TesvikModel>>((ref) {
   return SupabaseServisi().tesviklerStream();
 });
 
-// e-Devlet ÇKS belgesi alma linki
 const String cksEdevletUrl =
     'https://www.turkiye.gov.tr/tarim-ve-orman-bakanligi-ciftci-kayit-sistemi';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
-  List<TesvikModel> _filtrele(List<TesvikModel> hepsi, ProfilModel? profil) {
+  List<TesvikModel> _filtrele(
+      List<TesvikModel> hepsi, ProfilModel? profil) {
     if (profil == null) return hepsi;
     return hepsi.where((t) {
       if (t.uygunIller != null && t.uygunIller!.isNotEmpty) {
@@ -45,8 +45,7 @@ class HomeScreen extends ConsumerWidget {
       backgroundColor: AppTheme.cimensoluk,
       body: CustomScrollView(
         slivers: [
-
-          // ── APP BAR ───────────────────────────────────────────
+          // ── APP BAR ──────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             floating: false,
@@ -54,13 +53,16 @@ class HomeScreen extends ConsumerWidget {
             backgroundColor: AppTheme.ormanYesili,
             actions: [
               IconButton(
-                icon: const Icon(Icons.history_rounded, color: Colors.white),
+                icon: const Icon(Icons.history_rounded,
+                    color: Colors.white),
                 tooltip: 'Başvuru Takipçisi',
                 onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const TakipEkrani())),
+                    MaterialPageRoute(
+                        builder: (_) => const TakipEkrani())),
               ),
               IconButton(
-                icon: const Icon(Icons.logout_rounded, color: Colors.white70),
+                icon: const Icon(Icons.logout_rounded,
+                    color: Colors.white70),
                 tooltip: 'Çıkış',
                 onPressed: () =>
                     ref.read(authNotifierProvider.notifier).cikisYap(),
@@ -84,14 +86,13 @@ class HomeScreen extends ConsumerWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              profil?.ureticiTipi.emoji ?? '🌾',
-                              style: const TextStyle(fontSize: 26),
-                            ),
+                            Text(profil?.ureticiTipi.emoji ?? '🌾',
+                                style: const TextStyle(fontSize: 26)),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   const Text('Hoş geldin!',
                                       style: TextStyle(
@@ -116,8 +117,9 @@ class HomeScreen extends ConsumerWidget {
                             final f = _filtrele(t, profil);
                             return _IstatistikSatiri(
                               uygunSayisi: f.length,
-                              kritikSayisi:
-                                  f.where((x) => x.kritikTarihMi).length,
+                              kritikSayisi: f
+                                  .where((x) => x.kritikTarihMi)
+                                  .length,
                               toplamSayisi: t.length,
                             );
                           },
@@ -132,11 +134,11 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
 
-          // ── ÇKS BELGE KARTI ───────────────────────────────────
+          // ── ÇKS KARTI (opsiyonel) ─────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: _CksBelgeKarti(),
+              child: _CksOpsiyonelKarti(),
             ),
           ),
 
@@ -166,10 +168,8 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   const Spacer(),
                   tesviklerAsync.when(
-                    data: (t) {
-                      final f = _filtrele(t, profil);
-                      return _SayacRozeti(sayi: f.length);
-                    },
+                    data: (t) =>
+                        _SayacRozeti(sayi: _filtrele(t, profil).length),
                     loading: () => const SizedBox(),
                     error: (_, __) => const SizedBox(),
                   ),
@@ -192,15 +192,15 @@ class HomeScreen extends ConsumerWidget {
               final filtreli = _filtrele(tesvikler, profil);
               if (filtreli.isEmpty) {
                 return SliverFillRemaining(
-                  child: _BosTesvikGorunum(profil: profil),
+                  child: _BosGorunum(profil: profil),
                 );
               }
               return SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, i) =>
-                        _TesvikKarti(tesvik: filtreli[i], index: i),
+                    (context, i) => _TesvikKarti(
+                        tesvik: filtreli[i], index: i),
                     childCount: filtreli.length,
                   ),
                 ),
@@ -209,8 +209,6 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-
-      // ── FAB ───────────────────────────────────────────────────
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const OcrScreen())),
@@ -225,50 +223,28 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-// ── ÇKS BELGE KARTI ──────────────────────────────────────────────
-// Kullanıcıya ÇKS belgesi durumunu gösterir.
-// Belgesi yoksa e-Devlet'e yönlendirir.
+// ── ÇKS OPSİYONEL KARTI ─────────────────────────────────────────
+// Kullanıcıya ÇKS'nin ne işe yaradığını gösterir.
+// Zorunlu değil, daha iyi sonuç için teşvik eder.
 
-class _CksBelgeKarti extends StatefulWidget {
+class _CksOpsiyonelKarti extends StatefulWidget {
   @override
-  State<_CksBelgeKarti> createState() => _CksBelgeKartiState();
+  State<_CksOpsiyonelKarti> createState() => _CksOpsiyonelKartiState();
 }
 
-class _CksBelgeKartiState extends State<_CksBelgeKarti> {
-  // Kullanıcı "Belgeyi yükledim" derse local olarak işaretle
-  bool _belgeYuklendi = false;
-
-  Future<void> _eDevleteGit() async {
-    final uri = Uri.parse(cksEdevletUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('e-Devlet açılamadı. Tarayıcınızdan turkiye.gov.tr adresine gidin.'),
-            backgroundColor: AppTheme.ormanYesili,
-          ),
-        );
-      }
-    }
-  }
+class _CksOpsiyonelKartiState extends State<_CksOpsiyonelKarti> {
+  bool _gizle = false;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+    if (_gizle) return const SizedBox.shrink();
+
+    return Container(
       decoration: BoxDecoration(
-        color: _belgeYuklendi
-            ? AppTheme.yaprakAcik
-            : AppTheme.kremBeyaz,
+        color: AppTheme.kremBeyaz,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _belgeYuklendi
-              ? AppTheme.acikYesil
-              : AppTheme.bugdayAltini.withOpacity(0.5),
-          width: 1.5,
-        ),
+            color: AppTheme.bugdayAltini.withOpacity(0.4)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -282,126 +258,90 @@ class _CksBelgeKartiState extends State<_CksBelgeKarti> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Başlık
             Row(
               children: [
                 Container(
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: _belgeYuklendi
-                        ? AppTheme.acikYesil.withOpacity(0.2)
-                        : AppTheme.altinAcik,
+                    color: AppTheme.altinAcik,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Center(
-                    child: Text(
-                      _belgeYuklendi ? '✅' : '📄',
-                      style: const TextStyle(fontSize: 20),
-                    ),
-                  ),
+                  child: const Center(
+                      child: Text('💡',
+                          style: TextStyle(fontSize: 20))),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
+                const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _belgeYuklendi
-                            ? 'ÇKS Belgen Hazır'
-                            : 'ÇKS Belgen Var Mı?',
+                        'Daha İyi Eşleşme İçin',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          color: _belgeYuklendi
-                              ? AppTheme.ormanYesili
-                              : AppTheme.koyu,
+                          fontSize: 14,
+                          color: AppTheme.koyu,
                         ),
                       ),
                       Text(
-                        _belgeYuklendi
-                            ? 'Belge analizine geçebilirsin.'
-                            : 'Hibe başvurusu için ÇKS belgesi gereklidir.',
-                        style: const TextStyle(
+                        'ÇKS belgenle analiz yaptırırsan sonuçlar çok daha doğru olur.',
+                        style: TextStyle(
                             fontSize: 12, color: AppTheme.gri),
                       ),
                     ],
                   ),
                 ),
+                // Kapat butonu
+                GestureDetector(
+                  onTap: () => setState(() => _gizle = true),
+                  child: const Icon(Icons.close_rounded,
+                      size: 18, color: AppTheme.gri),
+                ),
               ],
             ),
-
-            if (!_belgeYuklendi) ...[
-              const SizedBox(height: 14),
-              const Divider(height: 1, color: Color(0xFFEEEEEE)),
-              const SizedBox(height: 14),
-
-              // e-Devlet butonu
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _eDevleteGit,
-                  icon: const Text('🏛️',
-                      style: TextStyle(fontSize: 16)),
-                  label: const Text('e-Devlet\'ten ÇKS Belgemi Al'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.ormanYesili,
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Zaten var butonu
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () =>
-                      setState(() => _belgeYuklendi = true),
-                  icon: const Icon(Icons.check_circle_outline_rounded,
-                      size: 18),
-                  label: const Text('Belgeyi Zaten Aldım'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.ormanYesili,
-                    side: const BorderSide(color: AppTheme.acikYesil),
-                    minimumSize: const Size(double.infinity, 44),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-              // Bilgi notu
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline_rounded,
-                      size: 13,
-                      color: AppTheme.gri.withOpacity(0.7)),
-                  const SizedBox(width: 6),
-                  const Expanded(
-                    child: Text(
-                      'e-Devlet\'te "Çiftçi Kayıt Sistemi" sayfasından '
-                      'ÇKS belgenizi PDF olarak indirebilirsiniz.',
-                      style: TextStyle(
-                          fontSize: 11, color: AppTheme.gri),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final uri = Uri.parse(cksEdevletUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri,
+                            mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    icon: const Text('🏛️',
+                        style: TextStyle(fontSize: 14)),
+                    label: const Text('e-Devlet\'ten Al',
+                        style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.ormanYesili,
+                      side: const BorderSide(
+                          color: AppTheme.acikYesil),
+                      minimumSize: const Size(0, 40),
                     ),
                   ),
-                ],
-              ),
-            ] else ...[
-              const SizedBox(height: 10),
-              // Belge yüklendi → analiz et yönlendirmesi
-              GestureDetector(
-                onTap: () => setState(() => _belgeYuklendi = false),
-                child: const Text(
-                  'Belge yok, geri al →',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.gri,
-                      decoration: TextDecoration.underline),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const OcrScreen()),
+                    ),
+                    icon: const Icon(Icons.upload_rounded, size: 16),
+                    label: const Text('Belge Yükle',
+                        style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 40),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -410,7 +350,6 @@ class _CksBelgeKartiState extends State<_CksBelgeKarti> {
 }
 
 // ── HIZLI İŞLEMLER ───────────────────────────────────────────────
-// Tek satırda 3 hızlı aksiyon butonu
 
 class _HizliIslemler extends StatelessWidget {
   @override
@@ -433,7 +372,8 @@ class _HizliIslemler extends StatelessWidget {
             etiket: 'Başvuru\nTakibi',
             renk: AppTheme.ortaYesil,
             onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const TakipEkrani())),
+                MaterialPageRoute(
+                    builder: (_) => const TakipEkrani())),
           ),
         ),
         const SizedBox(width: 10),
@@ -490,16 +430,14 @@ class _HizliButon extends StatelessWidget {
           children: [
             Text(emoji, style: const TextStyle(fontSize: 24)),
             const SizedBox(height: 6),
-            Text(
-              etiket,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                height: 1.3,
-              ),
-            ),
+            Text(etiket,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                )),
           ],
         ),
       ),
@@ -546,7 +484,10 @@ class _IstatistikSatiri extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        _IstatCard(deger: '$uygunSayisi', etiket: 'Sana Uygun', ikon: '🎯'),
+        _IstatCard(
+            deger: '$uygunSayisi',
+            etiket: 'Sana Uygun',
+            ikon: '🎯'),
         const SizedBox(width: 8),
         _IstatCard(
             deger: '$kritikSayisi',
@@ -554,7 +495,10 @@ class _IstatistikSatiri extends StatelessWidget {
             ikon: '⏰',
             vurgulu: kritikSayisi > 0),
         const SizedBox(width: 8),
-        _IstatCard(deger: '$toplamSayisi', etiket: 'Toplam', ikon: '📋'),
+        _IstatCard(
+            deger: '$toplamSayisi',
+            etiket: 'Toplam',
+            ikon: '📋'),
       ],
     );
   }
@@ -634,9 +578,9 @@ class _SayacRozeti extends StatelessWidget {
   }
 }
 
-class _BosTesvikGorunum extends StatelessWidget {
+class _BosGorunum extends StatelessWidget {
   final ProfilModel? profil;
-  const _BosTesvikGorunum({this.profil});
+  const _BosGorunum({this.profil});
 
   @override
   Widget build(BuildContext context) {
@@ -650,7 +594,8 @@ class _BosTesvikGorunum extends StatelessWidget {
             profil != null
                 ? '${profil!.il} için aktif teşvik bulunamadı.'
                 : 'Henüz aktif teşvik yok.',
-            style: const TextStyle(color: AppTheme.gri, fontSize: 16),
+            style:
+                const TextStyle(color: AppTheme.gri, fontSize: 16),
           ),
         ],
       ),
@@ -674,8 +619,8 @@ class _TesvikKarti extends StatelessWidget {
       curve: Curves.easeOut,
       builder: (context, v, child) => Opacity(
         opacity: v,
-        child:
-            Transform.translate(offset: Offset(0, 20 * (1 - v)), child: child),
+        child: Transform.translate(
+            offset: Offset(0, 20 * (1 - v)), child: child),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -695,69 +640,95 @@ class _TesvikKarti extends StatelessWidget {
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: tesvik.kritikTarihMi
-                      ? Colors.red.shade50
-                      : AppTheme.yaprakAcik,
-                  borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: tesvik.basvuruUrl != null
+              ? () async {
+                  final uri = Uri.parse(tesvik.basvuruUrl!);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri,
+                        mode: LaunchMode.externalApplication);
+                  }
+                }
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: tesvik.kritikTarihMi
+                        ? Colors.red.shade50
+                        : AppTheme.yaprakAcik,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(
+                        tesvik.kritikTarihMi ? '⚠️' : '💰',
+                        style: const TextStyle(fontSize: 22)),
+                  ),
                 ),
-                child: Center(
-                  child: Text(tesvik.kritikTarihMi ? '⚠️' : '💰',
-                      style: const TextStyle(fontSize: 22)),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(tesvik.isim,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.koyu,
-                        )),
-                    if (tesvik.kurum != null) ...[
-                      const SizedBox(height: 3),
-                      Text(tesvik.kurum!,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(tesvik.isim,
                           style: const TextStyle(
-                              fontSize: 12, color: AppTheme.gri)),
-                    ],
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      children: [
-                        if (tesvik.kritikTarihMi)
-                          _Etiket(
-                            metin:
-                                '${tesvik.sonBasvuruTarihi!.difference(DateTime.now()).inDays} gün kaldı!',
-                            renk: Colors.red.shade50,
-                            textRenk: Colors.red.shade700,
-                          ),
-                        if (tesvik.sonBasvuruTarihi != null &&
-                            !tesvik.kritikTarihMi)
-                          _Etiket(
-                            metin:
-                                'Son: ${tesvik.sonBasvuruTarihi!.day}/${tesvik.sonBasvuruTarihi!.month}/${tesvik.sonBasvuruTarihi!.year}',
-                            renk: AppTheme.yaprakAcik,
-                            textRenk: AppTheme.ormanYesili,
-                          ),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.koyu,
+                          )),
+                      if (tesvik.kurum != null) ...[
+                        const SizedBox(height: 3),
+                        Text(tesvik.kurum!,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.gri)),
                       ],
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        children: [
+                          if (tesvik.kritikTarihMi)
+                            _Etiket(
+                              metin:
+                                  '${tesvik.sonBasvuruTarihi!.difference(DateTime.now()).inDays} gün kaldı!',
+                              renk: Colors.red.shade50,
+                              textRenk: Colors.red.shade700,
+                            ),
+                          if (tesvik.sonBasvuruTarihi != null &&
+                              !tesvik.kritikTarihMi)
+                            _Etiket(
+                              metin:
+                                  'Son: ${tesvik.sonBasvuruTarihi!.day}/${tesvik.sonBasvuruTarihi!.month}/${tesvik.sonBasvuruTarihi!.year}',
+                              renk: AppTheme.yaprakAcik,
+                              textRenk: AppTheme.ormanYesili,
+                            ),
+                          // Resmi kaynak rozeti
+                          if (tesvik.basvuruUrl != null)
+                            _Etiket(
+                              metin: '🔗 Resmi Kaynak',
+                              renk: const Color(0xFFE3F2FD),
+                              textRenk: Colors.blue.shade700,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppTheme.gri, size: 20),
-            ],
+                Icon(
+                  tesvik.basvuruUrl != null
+                      ? Icons.open_in_new_rounded
+                      : Icons.chevron_right_rounded,
+                  color: AppTheme.gri,
+                  size: 20,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -771,7 +742,9 @@ class _Etiket extends StatelessWidget {
   final Color textRenk;
 
   const _Etiket(
-      {required this.metin, required this.renk, required this.textRenk});
+      {required this.metin,
+      required this.renk,
+      required this.textRenk});
 
   @override
   Widget build(BuildContext context) {
