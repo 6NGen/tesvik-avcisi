@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "268638465842",
+    "project_id": "tesvikavcisi-ef866",
+    "storage_bucket": "tesvikavcisi-ef866.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:268638465842:android:a78e9a2ec196f0d29a712b",
+        "android_client_info": {
+          "package_name": "com.example.tesvik_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIRcdek09lOWBaDG6OaWET7gmMcrf2rE4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

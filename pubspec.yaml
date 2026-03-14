@@ -1,0 +1,30 @@
+name: tesvik_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter_riverpod: ^2.5.1
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  image_picker: ^1.1.2
+  http: ^1.2.1
+  supabase_flutter: ^2.6.0
+  google_generative_ai: ^0.4.3 # YAPAY ZEKA PAKETİ EKLENDİ
+  flutter_markdown: ^0.7.7+1
+  url_launcher: ^6.3.2
+  firebase_core: ^4.5.0
+  firebase_messaging: ^16.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
