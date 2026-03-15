@@ -44,25 +44,25 @@ class TesvikApp extends StatelessWidget {
       title: 'Teşvik Avcısı',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      initialRoute: '/',
       routes: {
+        '/': (context) => const _AppRouter(),
         '/home': (context) => const HomeScreen(),
         '/auth': (context) => const AuthEkrani(),
         '/profil': (context) => const ProfilEkrani(),
       },
-      home: const _AuthRouter(),
     );
   }
 }
 
-// Kullanıcı durumuna göre yönlendiren router
-class _AuthRouter extends ConsumerStatefulWidget {
-  const _AuthRouter();
+class _AppRouter extends ConsumerStatefulWidget {
+  const _AppRouter();
 
   @override
-  ConsumerState<_AuthRouter> createState() => _AuthRouterState();
+  ConsumerState<_AppRouter> createState() => _AppRouterState();
 }
 
-class _AuthRouterState extends ConsumerState<_AuthRouter> {
+class _AppRouterState extends ConsumerState<_AppRouter> {
   @override
   void initState() {
     super.initState();
@@ -74,41 +74,52 @@ class _AuthRouterState extends ConsumerState<_AuthRouter> {
   @override
   Widget build(BuildContext context) {
     final authAsync = ref.watch(authProvider);
-    final profilAsync = ref.watch(profilProvider);
+    final profilState = ref.watch(profilProvider);
 
-    return authAsync.when(
-      loading: () => const Scaffold(
-        backgroundColor: AppTheme.ormanYesili,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('🌾', style: TextStyle(fontSize: 56)),
-              SizedBox(height: 20),
-              CircularProgressIndicator(color: Colors.white),
-            ],
-          ),
+    // Auth yükleniyor
+    if (authAsync.isLoading) {
+      return const _YukleniyorEkran();
+    }
+
+    final user = authAsync.value;
+
+    // Giriş yapılmamış → misafir ana ekran
+    if (user == null) {
+      return const HomeScreen();
+    }
+
+    // Giriş yapılmış ama profil yükleniyor
+    if (profilState.yukleniyor) {
+      return const _YukleniyorEkran();
+    }
+
+    // Profil yok → profil tamamlama
+    if (profilState.profilYok) {
+      return const ProfilEkrani();
+    }
+
+    // Her şey tamam → ana ekran
+    return const HomeScreen();
+  }
+}
+
+class _YukleniyorEkran extends StatelessWidget {
+  const _YukleniyorEkran();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: AppTheme.ormanYesili,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('🌾', style: TextStyle(fontSize: 56)),
+            SizedBox(height: 20),
+            CircularProgressIndicator(color: Colors.white),
+          ],
         ),
       ),
-      error: (_, __) => const AuthEkrani(),
-      data: (user) {
-        // Giriş yapılmamış → Auth ekranı
-        if (user == null) return const AuthEkrani();
-
-        // Profil yükleniyor → Bekle
-        if (profilAsync.isLoading) {
-          return const Scaffold(
-            backgroundColor: AppTheme.cimensoluk,
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        // Profil yok → Profil tamamlama
-        if (profilAsync.value == null) return const ProfilEkrani();
-
-        // Her şey tamam → Ana ekran
-        return const HomeScreen();
-      },
     );
   }
 }

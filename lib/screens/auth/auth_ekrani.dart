@@ -13,7 +13,17 @@ class AuthEkrani extends ConsumerWidget {
     final authState = ref.watch(authNotifierProvider);
     final notifier = ref.read(authNotifierProvider.notifier);
 
-    // Hata varsa göster
+    // Giriş başarılı → kökten sıfırla (profil kontrolü için)
+    ref.listen(authProvider, (onceki, sonraki) {
+    final user = sonraki.value;
+    if (user != null && context.mounted) {
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/',
+      (route) => false,
+      );
+     }
+    });
+    // Hata varsa snackbar göster
     ref.listen(authNotifierProvider, (_, next) {
       if (next.hata != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -30,14 +40,13 @@ class AuthEkrani extends ConsumerWidget {
       backgroundColor: AppTheme.ormanYesili,
       body: Column(
         children: [
-          // ── ÜST: Logo alanı ─────────────────────────────────
+          // ── LOGO ALANI ────────────────────────────────────
           Expanded(
             flex: 3,
             child: SafeArea(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo
                   Container(
                     width: 100,
                     height: 100,
@@ -53,15 +62,13 @@ class AuthEkrani extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Text(
-                    'Teşvik Avcısı',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
+                  const Text('Teşvik Avcısı',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                      )),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -70,21 +77,17 @@ class AuthEkrani extends ConsumerWidget {
                       color: AppTheme.bugdayAltini.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                          color:
-                              AppTheme.bugdayAltini.withOpacity(0.4)),
+                          color: AppTheme.bugdayAltini
+                              .withOpacity(0.4)),
                     ),
-                    child: const Text(
-                      'Çiftçinin hibe asistanı',
-                      style: TextStyle(
-                        color: AppTheme.bugdayAltini,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: const Text('Çiftçinin hibe asistanı',
+                        style: TextStyle(
+                          color: AppTheme.bugdayAltini,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        )),
                   ),
                   const SizedBox(height: 32),
-
-                  // Özellik listesi
                   _OzellikSatiri(
                       emoji: '🎯',
                       metin: 'Sana özel hibe eşleştirme'),
@@ -101,7 +104,7 @@ class AuthEkrani extends ConsumerWidget {
             ),
           ),
 
-          // ── ALT: Giriş kartı ────────────────────────────────
+          // ── GİRİŞ KARTI ──────────────────────────────────
           Expanded(
             flex: 2,
             child: Container(
@@ -117,23 +120,20 @@ class AuthEkrani extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Hemen Başla',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.koyu,
-                    ),
-                  ),
+                  const Text('Hemen Başla',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.koyu,
+                      )),
                   const SizedBox(height: 6),
                   const Text(
-                    'Google hesabınla saniyeler içinde giriş yap.',
-                    style:
-                        TextStyle(color: AppTheme.gri, fontSize: 14),
-                  ),
+                      'Google hesabınla saniyeler içinde giriş yap.',
+                      style: TextStyle(
+                          color: AppTheme.gri, fontSize: 14)),
                   const SizedBox(height: 24),
 
-                  // Google ile giriş butonu
+                  // Google butonu
                   SizedBox(
                     height: 56,
                     child: ElevatedButton(
@@ -176,13 +176,11 @@ class AuthEkrani extends ConsumerWidget {
                                               color: Colors.blue)),
                                 ),
                                 const SizedBox(width: 12),
-                                const Text(
-                                  'Google ile Giriş Yap',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
+                                const Text('Google ile Giriş Yap',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    )),
                               ],
                             ),
                     ),
@@ -194,23 +192,18 @@ class AuthEkrani extends ConsumerWidget {
                   TextButton(
                     onPressed: authState.yukleniyor
                         ? null
-                        : () => Navigator.of(context)
-                            .pushReplacementNamed('/home'),
-                    child: const Text(
-                      'Giriş yapmadan devam et →',
-                      style: TextStyle(color: AppTheme.gri),
-                    ),
+                        : () => Navigator.of(context).pop(),
+                    child: const Text('Giriş yapmadan devam et →',
+                        style: TextStyle(color: AppTheme.gri)),
                   ),
 
                   const Spacer(),
-
-                  // Gizlilik notu
                   const Text(
                     'Giriş yaparak kişisel verilerinizin '
                     'hibe eşleştirme amacıyla kullanılmasını kabul edersiniz.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: AppTheme.gri, fontSize: 10),
+                    style:
+                        TextStyle(color: AppTheme.gri, fontSize: 10),
                   ),
                 ],
               ),
@@ -225,9 +218,7 @@ class AuthEkrani extends ConsumerWidget {
 class _OzellikSatiri extends StatelessWidget {
   final String emoji;
   final String metin;
-
-  const _OzellikSatiri(
-      {required this.emoji, required this.metin});
+  const _OzellikSatiri({required this.emoji, required this.metin});
 
   @override
   Widget build(BuildContext context) {
@@ -236,14 +227,12 @@ class _OzellikSatiri extends StatelessWidget {
       children: [
         Text(emoji, style: const TextStyle(fontSize: 18)),
         const SizedBox(width: 10),
-        Text(
-          metin,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+        Text(metin,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            )),
       ],
     );
   }

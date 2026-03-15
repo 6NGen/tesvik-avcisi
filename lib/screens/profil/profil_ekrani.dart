@@ -7,53 +7,86 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/profil_model.dart';
 import '../../providers/profil_provider.dart';
-import '../home/home_screen.dart';
 
 class ProfilEkrani extends ConsumerStatefulWidget {
-  const ProfilEkrani({super.key});
+  final bool duzenlemeModu; // true = mevcut profili düzenle
+  const ProfilEkrani({super.key, this.duzenlemeModu = false});
 
   @override
   ConsumerState<ProfilEkrani> createState() => _ProfilEkraniState();
 }
 
 class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
-  // Adım sayacı (0–3)
   int _adim = 0;
-
-  // Seçilen değerler
-  UreticiTipi? _tip;
+  final List<UreticiTipi> _tipler = []; // Çoklu tip
   String? _il;
   final List<String> _urunler = [];
-  final _miktarController = TextEditingController();
+  final _dekarController = TextEditingController();
+  final _kovanController = TextEditingController();
+  final _hayvanController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Düzenleme modunda mevcut profili yükle
+    if (widget.duzenlemeModu) {
+      final profil = ref.read(profilProvider).profil;
+      if (profil != null) {
+        _tipler.addAll(profil.ureticiTipleri);
+        _il = profil.il;
+        _urunler.addAll(profil.urunler);
+        if (profil.dekar != null) {
+          _dekarController.text = profil.dekar!.toInt().toString();
+        }
+        if (profil.kovanSayisi != null) {
+          _kovanController.text = profil.kovanSayisi.toString();
+        }
+        if (profil.hayvanSayisi != null) {
+          _hayvanController.text = profil.hayvanSayisi.toString();
+        }
+      }
+    }
+  }
 
   @override
   void dispose() {
-    _miktarController.dispose();
+    _dekarController.dispose();
+    _kovanController.dispose();
+    _hayvanController.dispose();
     super.dispose();
   }
 
-  // İleri butonu aktif mi?
   bool get _ileriAktif {
     switch (_adim) {
-      case 0: return _tip != null;
+      case 0: return _tipler.isNotEmpty;
       case 1: return _il != null;
       case 2: return _urunler.isNotEmpty;
-      case 3: return true; // miktar opsiyonel
+      case 3: return true;
       default: return false;
     }
   }
 
-  // Profili kaydet ve ana sayfaya geç
+  // Seçili tiplere göre tüm ürünleri birleştir
+  List<String> get _tumUrunler {
+    final liste = <String>{};
+    for (final tip in _tipler) {
+      liste.addAll(tipUrunleri[tip] ?? []);
+    }
+    return liste.toList();
+  }
+
   Future<void> _tamamla() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
     final profil = ProfilModel(
       userId: user.id,
-      ureticiTipi: _tip!,
+      ureticiTipleri: _tipler,
       il: _il!,
       urunler: _urunler,
-      dekarVeyaKovan: double.tryParse(_miktarController.text),
+      dekar: double.tryParse(_dekarController.text),
+      kovanSayisi: int.tryParse(_kovanController.text),
+      hayvanSayisi: int.tryParse(_hayvanController.text),
     );
 
     final basarili =
@@ -61,13 +94,18 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
 
     if (mounted) {
       if (basarili) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
+        if (widget.duzenlemeModu) {
+          Navigator.pop(context); // Ayarlar ekranına geri dön
+        } else {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/',
+            (route) => false,
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profil kaydedilemedi. Tekrar deneyin.'),
+            content: Text('Profil kaydedilemedi.'),
             backgroundColor: AppTheme.hata,
           ),
         );
@@ -79,16 +117,22 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.cimensoluk,
+      appBar: widget.duzenlemeModu
+          ? AppBar(
+              title: const Text('Profilimi Düzenle'),
+              backgroundColor: AppTheme.ormanYesili,
+              foregroundColor: Colors.white,
+            )
+          : null,
       body: SafeArea(
         child: Column(
           children: [
-            // ── ÜST BAR ────────────────────────────────────────
+            // İlerleme çubuğu
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // İlerleme çubuğu
                   Row(
                     children: List.generate(4, (i) {
                       return Expanded(
@@ -107,47 +151,31 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
                     }),
                   ),
                   const SizedBox(height: 20),
-                  Text(
-                    'Adım ${_adim + 1}/4',
-                    style: const TextStyle(
-                      color: AppTheme.gri,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  Text('Adım ${_adim + 1}/4',
+                      style: const TextStyle(
+                          color: AppTheme.gri,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  Text(
-                    _adimBasligi(),
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.koyu,
-                    ),
-                  ),
+                  Text(_adimBasligi(),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.koyu,
+                      )),
                   const SizedBox(height: 4),
-                  Text(
-                    _adimAciklamasi(),
-                    style: const TextStyle(
-                        color: AppTheme.gri, fontSize: 14),
-                  ),
+                  Text(_adimAciklamasi(),
+                      style: const TextStyle(
+                          color: AppTheme.gri, fontSize: 14)),
                 ],
               ),
             ),
 
             const SizedBox(height: 24),
 
-            // ── ADIM İÇERİĞİ ───────────────────────────────────
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.1, 0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                      parent: anim, curve: Curves.easeOut)),
-                  child: FadeTransition(opacity: anim, child: child),
-                ),
                 child: KeyedSubtree(
                   key: ValueKey(_adim),
                   child: _adimIcerigi(),
@@ -155,12 +183,11 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
               ),
             ),
 
-            // ── ALT BUTONLAR ────────────────────────────────────
+            // Alt butonlar
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               child: Row(
                 children: [
-                  // Geri
                   if (_adim > 0)
                     Padding(
                       padding: const EdgeInsets.only(right: 12),
@@ -169,16 +196,13 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(60, 54),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                              borderRadius: BorderRadius.circular(14)),
                           side: const BorderSide(color: AppTheme.griAcik),
                         ),
                         child: const Icon(Icons.arrow_back_rounded,
                             color: AppTheme.gri),
                       ),
                     ),
-
-                  // İleri / Tamamla
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _ileriAktif
@@ -194,7 +218,11 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
                         disabledBackgroundColor: AppTheme.griAcik,
                       ),
                       child: Text(
-                        _adim < 3 ? 'Devam Et' : 'Tamamla 🎉',
+                        _adim < 3
+                            ? 'Devam Et'
+                            : widget.duzenlemeModu
+                                ? 'Kaydet ✓'
+                                : 'Tamamla 🎉',
                         style: const TextStyle(fontSize: 16),
                       ),
                     ),
@@ -208,31 +236,25 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
     );
   }
 
-  // ── ADIM BAŞLIKLARI ─────────────────────────────────────────
-
   String _adimBasligi() {
     switch (_adim) {
       case 0: return 'Ne üretiyorsunuz?';
       case 1: return 'Hangi ilde?';
       case 2: return 'Ürünleriniz?';
-      case 3: return 'Ne kadar?';
+      case 3: return 'Üretim miktarı?';
       default: return '';
     }
   }
 
   String _adimAciklamasi() {
     switch (_adim) {
-      case 0: return 'Üretim türünüzü seçin.';
+      case 0: return 'Birden fazla seçebilirsiniz.';
       case 1: return 'Faaliyet gösterdiğiniz ili seçin.';
-      case 2: return 'Ürettiğiniz ürünleri seçin. Birden fazla seçebilirsiniz.';
-      case 3: return _tip == UreticiTipi.arici
-          ? 'Kaç kovanınız var? (Opsiyonel)'
-          : 'Toplam arazi büyüklüğünüz? (Opsiyonel)';
+      case 2: return 'Ürettiğiniz ürünleri seçin.';
+      case 3: return 'Hibe hesaplaması için kullanılır. (Opsiyonel)';
       default: return '';
     }
   }
-
-  // ── ADIM İÇERİKLERİ ─────────────────────────────────────────
 
   Widget _adimIcerigi() {
     switch (_adim) {
@@ -244,63 +266,127 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
     }
   }
 
-  // ADIM 1 — Üretici tipi
+  // ADIM 1 — Çoklu tip seçimi
   Widget _tipSecimi() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: GridView.count(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: UreticiTipi.values.map((tip) {
-          final secili = _tip == tip;
-          return GestureDetector(
-            onTap: () => setState(() => _tip = tip),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              decoration: BoxDecoration(
-                color: secili ? AppTheme.ormanYesili : AppTheme.kremBeyaz,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: secili
-                      ? AppTheme.ormanYesili
-                      : Colors.green.shade100,
-                  width: secili ? 2 : 1,
-                ),
-                boxShadow: secili
-                    ? [
-                        BoxShadow(
-                          color:
-                              AppTheme.ormanYesili.withOpacity(0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        )
-                      ]
-                    : [],
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(tip.emoji,
-                      style: const TextStyle(fontSize: 40)),
-                  const SizedBox(height: 10),
-                  Text(
-                    tip.etiket,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: secili
-                          ? Colors.white
-                          : AppTheme.koyu,
-                    ),
-                  ),
-                ],
-              ),
+      child: Column(
+        children: [
+          // Seçim ipucu
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.altinAcik,
+              borderRadius: BorderRadius.circular(10),
             ),
-          );
-        }).toList(),
+            child: const Row(
+              children: [
+                Text('💡', style: TextStyle(fontSize: 16)),
+                SizedBox(width: 8),
+                Text(
+                  'Birden fazla üretim yapıyorsanız hepsini seçin.',
+                  style: TextStyle(
+                      fontSize: 12, color: AppTheme.toprakKahve),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: UreticiTipi.values.map((tip) {
+              final secili = _tipler.contains(tip);
+              return GestureDetector(
+                onTap: () => setState(() {
+                  if (secili) {
+                    _tipler.remove(tip);
+                    // Bu tipe ait ürünleri kaldır
+                    final tipUrunListesi = tipUrunleri[tip] ?? [];
+                    _urunler.removeWhere(
+                        (u) => tipUrunListesi.contains(u));
+                  } else {
+                    _tipler.add(tip);
+                  }
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: secili
+                        ? AppTheme.ormanYesili
+                        : AppTheme.kremBeyaz,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: secili
+                          ? AppTheme.ormanYesili
+                          : Colors.green.shade100,
+                      width: secili ? 2 : 1,
+                    ),
+                    boxShadow: secili
+                        ? [
+                            BoxShadow(
+                              color: AppTheme.ormanYesili
+                                  .withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            )
+                          ]
+                        : [],
+                  ),
+                  child: Stack(
+                    children: [
+                      Center(
+                        child: Column(
+                          mainAxisAlignment:
+                              MainAxisAlignment.center,
+                          children: [
+                            Text(tip.emoji,
+                                style:
+                                    const TextStyle(fontSize: 40)),
+                            const SizedBox(height: 10),
+                            Text(
+                              tip.etiket,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: secili
+                                    ? Colors.white
+                                    : AppTheme.koyu,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Seçili işareti
+                      if (secili)
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: AppTheme.bugdayAltini,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -321,12 +407,13 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
             border: InputBorder.none,
             contentPadding:
                 EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            prefixIcon:
-                Icon(Icons.location_on_outlined, color: AppTheme.ormanYesili),
+            prefixIcon: Icon(Icons.location_on_outlined,
+                color: AppTheme.ormanYesili),
           ),
           hint: const Text('İl seçin...'),
           items: turkiyeIlleri
-              .map((il) => DropdownMenuItem(value: il, child: Text(il)))
+              .map((il) =>
+                  DropdownMenuItem(value: il, child: Text(il)))
               .toList(),
           onChanged: (v) => setState(() => _il = v),
         ),
@@ -334,103 +421,191 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
     );
   }
 
-  // ADIM 3 — Ürün seçimi
+  // ADIM 3 — Ürün seçimi (tüm seçili tiplerin ürünleri birleşik)
   Widget _urunSecimi() {
-    final liste = _tip != null ? tipUrunleri[_tip!]! : [];
+    final liste = _tumUrunler;
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: liste.map((urun) {
-          final secili = _urunler.contains(urun);
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                if (secili) {
-                  _urunler.remove(urun);
-                } else {
-                  _urunler.add(urun);
-                }
-              });
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: secili
-                    ? AppTheme.ormanYesili
-                    : AppTheme.kremBeyaz,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: secili
-                      ? AppTheme.ormanYesili
-                      : Colors.green.shade100,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Seçili tip rozeti
+          Wrap(
+            spacing: 8,
+            children: _tipler
+                .map((t) => Chip(
+                      label: Text('${t.emoji} ${t.etiket}'),
+                      backgroundColor: AppTheme.yaprakAcik,
+                      labelStyle: const TextStyle(
+                          color: AppTheme.ormanYesili,
+                          fontSize: 12),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: liste.map((urun) {
+              final secili = _urunler.contains(urun);
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (secili) {
+                      _urunler.remove(urun);
+                    } else {
+                      _urunler.add(urun);
+                    }
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: secili
+                        ? AppTheme.ormanYesili
+                        : AppTheme.kremBeyaz,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: secili
+                          ? AppTheme.ormanYesili
+                          : Colors.green.shade100,
+                    ),
+                  ),
+                  child: Text(urun,
+                      style: TextStyle(
+                        color: secili
+                            ? Colors.white
+                            : AppTheme.koyu,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      )),
                 ),
-              ),
-              child: Text(
-                urun,
-                style: TextStyle(
-                  color: secili ? Colors.white : AppTheme.koyu,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          );
-        }).toList(),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
 
-  // ADIM 4 — Miktar girişi
+  // ADIM 4 — Miktar (seçili tiplere göre dinamik)
   Widget _miktarGirisi() {
-    final ariciMi = _tip == UreticiTipi.arici;
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.kremBeyaz,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.green.shade100),
+          // Çiftçi veya organik → dekar
+          if (_tipler.contains(UreticiTipi.ciftci) ||
+              _tipler.contains(UreticiTipi.organik)) ...[
+            _MiktarAlani(
+              controller: _dekarController,
+              baslik: '🌾 Arazi Büyüklüğü',
+              birim: 'dekar',
+              ipucu: 'Tarım arazinizin toplam büyüklüğü',
             ),
-            child: TextField(
-              controller: _miktarController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(
-                  fontSize: 32, fontWeight: FontWeight.w800),
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.all(24),
-                hintText: '0',
-                hintStyle: TextStyle(
-                    color: AppTheme.griAcik,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800),
-                suffixText: ariciMi ? 'kovan' : 'dekar',
-                suffixStyle: const TextStyle(
-                  color: AppTheme.ormanYesili,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+            const SizedBox(height: 16),
+          ],
+
+          // Arıcı → kovan
+          if (_tipler.contains(UreticiTipi.arici)) ...[
+            _MiktarAlani(
+              controller: _kovanController,
+              baslik: '🐝 Kovan Sayısı',
+              birim: 'kovan',
+              ipucu: 'Aktif kovan adedi',
             ),
-          ),
-          const SizedBox(height: 16),
-          // Atlayabilirler notu
+            const SizedBox(height: 16),
+          ],
+
+          // Hayvancı → hayvan
+          if (_tipler.contains(UreticiTipi.hayvancilik)) ...[
+            _MiktarAlani(
+              controller: _hayvanController,
+              baslik: '🐄 Hayvan Sayısı',
+              birim: 'hayvan',
+              ipucu: 'Toplam büyük ve küçükbaş sayısı',
+            ),
+            const SizedBox(height: 16),
+          ],
+
           Text(
-            'Boş bırakabilirsiniz — OCR ile otomatik doldurulur.',
+            'Bu alanlar opsiyoneldir. Boş bırakabilirsiniz.',
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: AppTheme.gri.withOpacity(0.7), fontSize: 12),
+                color: AppTheme.gri.withOpacity(0.6),
+                fontSize: 12),
           ),
         ],
       ),
+    );
+  }
+}
+
+// Miktar giriş alanı
+class _MiktarAlani extends StatelessWidget {
+  final TextEditingController controller;
+  final String baslik;
+  final String birim;
+  final String ipucu;
+
+  const _MiktarAlani({
+    required this.controller,
+    required this.baslik,
+    required this.birim,
+    required this.ipucu,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(baslik,
+            style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: AppTheme.koyu)),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.kremBeyaz,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.green.shade100),
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly
+            ],
+            style: const TextStyle(
+                fontSize: 24, fontWeight: FontWeight.w800),
+            textAlign: TextAlign.center,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.all(16),
+              hintText: '0',
+              hintStyle: TextStyle(
+                  color: AppTheme.griAcik,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800),
+              suffixText: birim,
+              suffixStyle: const TextStyle(
+                color: AppTheme.ormanYesili,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(ipucu,
+            style: TextStyle(
+                color: AppTheme.gri.withOpacity(0.6),
+                fontSize: 11)),
+      ],
     );
   }
 }

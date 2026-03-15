@@ -4,20 +4,45 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profil_model.dart';
 
-class ProfilNotifier extends StateNotifier<AsyncValue<ProfilModel?>> {
-  ProfilNotifier() : super(const AsyncValue.loading()) {
+// Profil yükleme durumu
+enum ProfilYukleme { yukleniyor, var_, yok }
+
+class ProfilState {
+  final ProfilYukleme durum;
+  final ProfilModel? profil;
+
+  const ProfilState({
+    required this.durum,
+    this.profil,
+  });
+
+  // Yükleniyor mu?
+  bool get yukleniyor => durum == ProfilYukleme.yukleniyor;
+
+  // Profil var mı?
+  bool get profilVar => durum == ProfilYukleme.var_;
+
+  // Profil yok mu? (yükleme bitti, gerçekten yok)
+  bool get profilYok => durum == ProfilYukleme.yok;
+}
+
+class ProfilNotifier extends StateNotifier<ProfilState> {
+  ProfilNotifier()
+      : super(const ProfilState(durum: ProfilYukleme.yukleniyor)) {
     _profilYukle();
   }
 
   final _client = Supabase.instance.client;
 
-  // Mevcut profili Supabase'den yükle
   Future<void> _profilYukle() async {
     final user = _client.auth.currentUser;
+
+    // Kullanıcı giriş yapmamış → profil yok (yükleme gerekmiyor)
     if (user == null) {
-      state = const AsyncValue.data(null);
+      state = const ProfilState(durum: ProfilYukleme.yok);
       return;
     }
+
     try {
       final response = await _client
           .from('kullanici_profilleri')
@@ -26,40 +51,49 @@ class ProfilNotifier extends StateNotifier<AsyncValue<ProfilModel?>> {
           .maybeSingle();
 
       if (response == null) {
-        state = const AsyncValue.data(null); // Profil yok → tamamlama ekranı
+        // Kullanıcı var ama profil yok → profil ekranı göster
+        state = const ProfilState(durum: ProfilYukleme.yok);
       } else {
-        state = AsyncValue.data(
-            ProfilModel.fromJson(response as Map<String, dynamic>));
+        // Profil bulundu
+        state = ProfilState(
+          durum: ProfilYukleme.var_,
+          profil: ProfilModel.fromJson(
+              response as Map<String, dynamic>),
+        );
       }
     } catch (e) {
-      state = const AsyncValue.data(null);
+      // Hata olursa profil yok say (tekrar sormaktan iyisi)
+      state = const ProfilState(durum: ProfilYukleme.yok);
     }
   }
 
-  // Profili kaydet veya güncelle
+  // Profili kaydet
   Future<bool> profilKaydet(ProfilModel profil) async {
     try {
       await _client.from('kullanici_profilleri').upsert(
         profil.toJson(),
         onConflict: 'user_id',
       );
-      state = AsyncValue.data(profil);
+      state = ProfilState(
+        durum: ProfilYukleme.var_,
+        profil: profil,
+      );
       return true;
     } catch (e) {
       return false;
     }
   }
 
-  // Profili sıfırla (çıkış yapınca)
-  void sifirla() => state = const AsyncValue.data(null);
+  // Profili yeniden yükle (giriş yapınca çağrılır)
+  Future<void> yenile() => _profilYukle();
+
+  // Çıkış yapınca sıfırla
+  void sifirla() {
+    state = const ProfilState(durum: ProfilYukleme.yok);
+  }
 }
 
 final profilProvider =
-    StateNotifierProvider<ProfilNotifier, AsyncValue<ProfilModel?>>(
+    StateNotifierProvider<ProfilNotifier, ProfilState>(
   (ref) => ProfilNotifier(),
 );
-
-// Profil var mı yok mu — router'da kullanılır
-final profilVarMiProvider = Provider<bool>((ref) {
-  return ref.watch(profilProvider).value != null;
-});

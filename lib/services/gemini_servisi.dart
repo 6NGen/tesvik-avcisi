@@ -19,37 +19,41 @@ class GeminiServisi {
   Future<AnalizSonucu> belgeAnalizeEt({
     required Uint8List gorselBytes,
     required List<TesvikModel> tesvikler,
-    ProfilModel? profil, // ← YENİ: profil opsiyonel
+    ProfilModel? profil,
+    String? dosyaAdi,
   }) async {
     final bugun = DateTime.now().toString().split(' ')[0];
+
+    // Dosya tipini belirle
+    final mimeType = _mimeTypeBelirle(gorselBytes, dosyaAdi ?? '');
+
+    // Profil metni
+    final profilMetni = profil != null
+        ? '''
+ÇİFTÇİ PROFİLİ (sistemde kayıtlı):
+- Üretici tipi: ${profil.ureticiTipleri.map((t) => t.etiket).join(' + ')}
+- İl: ${profil.il}
+- Ürünler: ${profil.urunler.join(', ')}
+${profil.dekar != null ? '- Arazi: ${profil.dekar!.toInt()} dekar' : ''}
+${profil.kovanSayisi != null ? '- Kovan: ${profil.kovanSayisi} adet' : ''}
+${profil.hayvanSayisi != null ? '- Hayvan: ${profil.hayvanSayisi} adet' : ''}
+'''
+        : '';
 
     final tesvikMetni = tesvikler.isEmpty
         ? 'Sistemde aktif teşvik bulunamadı.'
         : tesvikler.map((t) => t.promptSatiri()).join('\n');
 
-    // Profil varsa prompt'a ekle
-    final profilMetni = profil != null
-        ? '''
-ÇİFTÇİ PROFİLİ (sistemde kayıtlı):
-- Üretici tipi: ${profil.ureticiTipi.etiket}
-- İl: ${profil.il}
-- Ürünler: ${profil.urunler.join(', ')}
-- ${profil.ureticiTipi == UreticiTipi.arici ? 'Kovan sayısı' : 'Arazi büyüklüğü'}: ${profil.dekarVeyaKovan != null ? '${profil.dekarVeyaKovan!.toInt()} ${profil.ureticiTipi == UreticiTipi.arici ? 'kovan' : 'dekar'}' : 'Belirtilmemiş'}
-
-Bu profil bilgilerini belgedeki bilgilerle karşılaştır ve eşleşme analizini daha doğru yap.
-'''
-        : '';
-
     final promptStr = '''
 Bugünün tarihi: $bugun. Sen profesyonel bir tarım danışmanısın.
 
 $profilMetni
-Çiftçinin yüklediği belgeyi incele ve aşağıdaki adımları uygula:
+Yüklenen belgeyi (${dosyaAdi ?? 'belge'}) incele ve şunları yap:
 
-1. Belgeden okunan bilgilerle (varsa) profil bilgilerini karşılaştır, çiftçinin profilini özetle.
+1. Belgeden okunan bilgilerle profil bilgilerini karşılaştır, çiftçinin profilini özetle.
 2. "SİSTEMDEKİ TEŞVİKLER" listesinden bu çiftçiye UYGUN olanları nedenleriyle açıkla.
-3. UYGUN olmayan teşvikleri de kısaca belirt (neden uygun değil).
-4. ÇOK ÖNEMLİ: Sadece UYGUN teşviklerin altına şu formatta link ekle:
+3. UYGUN olmayan teşvikleri kısaca belirt.
+4. Sadece UYGUN teşviklerin altına şu formatta link ekle:
 [➔ HEMEN BAŞVURMAK İÇİN TIKLAYIN](linki_buraya_yaz)
 5. Uygun bir teşvikin bitmesine 15 günden az kaldıysa metnin sonuna KRITIK_UYARI yaz.
 
@@ -61,7 +65,7 @@ $tesvikMetni
       final response = await _model.generateContent([
         Content.multi([
           TextPart(promptStr),
-          DataPart('image/jpeg', gorselBytes),
+          DataPart(mimeType, gorselBytes),
         ]),
       ]);
 
@@ -78,6 +82,37 @@ $tesvikMetni
             'Günlük AI analiz limiti doldu. Lütfen birkaç dakika bekleyin.');
       }
       throw Exception('AI hatası: ${e.message}');
+    }
+  }
+
+  /// Dosya içeriğine ve adına göre MIME type belirle
+  String _mimeTypeBelirle(Uint8List bytes, String dosyaAdi) {
+    // PDF sihirli baytları: %PDF
+    if (bytes.length > 4 &&
+        bytes[0] == 0x25 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x44 &&
+        bytes[3] == 0x46) {
+      return 'application/pdf';
+    }
+    // PNG
+    if (bytes.length > 4 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50) {
+      return 'image/png';
+    }
+    // JPEG
+    if (bytes.length > 2 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8) {
+      return 'image/jpeg';
+    }
+    // Uzantıya göre
+    final uzanti = dosyaAdi.split('.').last.toLowerCase();
+    switch (uzanti) {
+      case 'pdf': return 'application/pdf';
+      case 'png': return 'image/png';
+      default: return 'image/jpeg';
     }
   }
 }

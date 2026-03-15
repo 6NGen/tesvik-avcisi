@@ -12,13 +12,15 @@ class OcrScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state  = ref.watch(ocrProvider);
+    final state = ref.watch(ocrProvider);
     final notifier = ref.read(ocrProvider.notifier);
 
     return Scaffold(
       backgroundColor: AppTheme.cimensoluk,
       appBar: AppBar(
         title: const Text('Belge Analizi'),
+        backgroundColor: AppTheme.ormanYesili,
+        foregroundColor: Colors.white,
         actions: [
           if (!state.bos)
             IconButton(
@@ -35,14 +37,15 @@ class OcrScreen extends ConsumerWidget {
   }
 
   Widget _govde(BuildContext context, OcrState state, OcrNotifier notifier) {
+
     // YÜKLENİYOR
     if (state.yukleniyor) {
-      return const Center(
-        key: ValueKey('yukleniyor'),
+      return Center(
+        key: const ValueKey('yukleniyor'),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
+            const SizedBox(
               width: 60,
               height: 60,
               child: CircularProgressIndicator(
@@ -50,15 +53,20 @@ class OcrScreen extends ConsumerWidget {
                 strokeWidth: 3,
               ),
             ),
-            SizedBox(height: 24),
-            Text('🧠 Yapay zeka analiz ediyor...',
+            const SizedBox(height: 24),
+            const Text('🧠 Yapay zeka analiz ediyor...',
                 style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.ormanYesili)),
-            SizedBox(height: 8),
-            Text('Bu işlem 15–30 saniye sürebilir.',
-                style: TextStyle(fontSize: 13, color: AppTheme.gri)),
+            const SizedBox(height: 8),
+            if (state.dosyaAdi != null)
+              Text(state.dosyaAdi!,
+                  style: const TextStyle(
+                      fontSize: 13, color: AppTheme.gri)),
+            const SizedBox(height: 4),
+            const Text('Bu işlem 15–30 saniye sürebilir.',
+                style: TextStyle(fontSize: 12, color: AppTheme.gri)),
           ],
         ),
       );
@@ -69,7 +77,6 @@ class OcrScreen extends ConsumerWidget {
       return Column(
         key: const ValueKey('sonuc'),
         children: [
-          // Kritik uyarı
           if (state.sonuc!.kritikUyariVar)
             Container(
               width: double.infinity,
@@ -92,8 +99,6 @@ class OcrScreen extends ConsumerWidget {
                 ],
               ),
             ),
-
-          // Sonuç alanı
           Expanded(
             child: Container(
               margin: const EdgeInsets.all(16),
@@ -101,13 +106,6 @@ class OcrScreen extends ConsumerWidget {
                 color: AppTheme.kremBeyaz,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.green.shade100),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
@@ -115,7 +113,9 @@ class OcrScreen extends ConsumerWidget {
                   data: state.sonuc!.temizMetin,
                   styleSheet: MarkdownStyleSheet(
                     p: const TextStyle(
-                        fontSize: 14, height: 1.6, color: AppTheme.koyu),
+                        fontSize: 14,
+                        height: 1.6,
+                        color: AppTheme.koyu),
                     h2: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -136,12 +136,10 @@ class OcrScreen extends ConsumerWidget {
               ),
             ),
           ),
-
-          // Buton
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: ElevatedButton.icon(
-              onPressed: notifier.gorselSecVeAnalizeEt,
+              onPressed: notifier.dosyaSecVeAnalizeEt,
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Yeni Analiz'),
             ),
@@ -167,7 +165,7 @@ class OcrScreen extends ConsumerWidget {
                       color: AppTheme.hata, fontSize: 14)),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: notifier.gorselSecVeAnalizeEt,
+                onPressed: notifier.dosyaSecVeAnalizeEt,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Tekrar Dene'),
                 style: ElevatedButton.styleFrom(
@@ -179,7 +177,7 @@ class OcrScreen extends ConsumerWidget {
       );
     }
 
-    // BOŞ (başlangıç)
+    // BOŞ — başlangıç ekranı
     return Center(
       key: const ValueKey('bos'),
       child: Padding(
@@ -187,10 +185,10 @@ class OcrScreen extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Yükleme kartı
+            // Ana kart
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.all(28),
               decoration: BoxDecoration(
                 color: AppTheme.kremBeyaz,
                 borderRadius: BorderRadius.circular(20),
@@ -228,22 +226,35 @@ class OcrScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'ÇKS belgesi veya teşvik belgelerinizi\ngaleriden seçin, AI analiz etsin.',
+                    'ÇKS belgesi veya teşvik belgelerinizi\nyükleyin, AI analiz etsin.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 13,
                         color: AppTheme.gri,
                         height: 1.5),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
+
+                  // Dosya seç butonu
                   ElevatedButton.icon(
-                    onPressed: notifier.gorselSecVeAnalizeEt,
-                    icon: const Icon(Icons.add_a_photo_rounded),
-                    label: const Text('Analizi Başlat'),
+                    onPressed: notifier.dosyaSecVeAnalizeEt,
+                    icon: const Icon(Icons.folder_open_rounded),
+                    label: const Text('Dosya Seç'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.ormanYesili,
                       minimumSize: const Size(220, 54),
                     ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Desteklenen formatlar
+                  const Text(
+                    'PDF • JPG • PNG',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.gri,
+                        letterSpacing: 1),
                   ),
                 ],
               ),
@@ -252,17 +263,27 @@ class OcrScreen extends ConsumerWidget {
             const SizedBox(height: 20),
 
             // İpucu
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.lightbulb_outline_rounded,
-                    size: 14, color: AppTheme.bugdayAltini),
-                const SizedBox(width: 6),
-                const Text(
-                  'Belgeyi iyi aydınlatılmış ortamda çekin',
-                  style: TextStyle(fontSize: 12, color: AppTheme.gri),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.altinAcik,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Text('💡', style: TextStyle(fontSize: 16)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'e-Devlet\'ten indirdiğiniz ÇKS PDF belgesini '
+                      'doğrudan yükleyebilirsiniz.',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.toprakKahve),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

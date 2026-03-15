@@ -3,14 +3,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'profil_provider.dart';
 
-// Mevcut kullanıcıyı dinleyen provider
 final authProvider = StreamProvider<User?>((ref) {
   return Supabase.instance.client.auth.onAuthStateChange
       .map((e) => e.session?.user);
 });
 
-// Auth state
 class AuthState {
   final bool yukleniyor;
   final String? hata;
@@ -27,24 +26,22 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState());
+  final Ref _ref;
+
+  AuthNotifier(this._ref) : super(const AuthState());
 
   final _client = Supabase.instance.client;
   final _googleSignIn = GoogleSignIn();
 
-  /// Google ile giriş yap
   Future<void> googleIleGirisYap() async {
     state = state.copyWith(yukleniyor: true, hata: null);
     try {
-      // Google hesap seçici aç
       final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        // Kullanıcı iptal etti
         state = state.copyWith(yukleniyor: false);
         return;
       }
 
-      // Google token al
       final googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
       final accessToken = googleAuth.accessToken;
@@ -57,12 +54,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return;
       }
 
-      // Supabase'e giriş yap
       await _client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
         accessToken: accessToken,
       );
+
+      // Giriş yapılınca profili yeniden yükle
+      await _ref.read(profilProvider.notifier).yenile();
 
       state = state.copyWith(yukleniyor: false);
     } catch (e) {
@@ -73,11 +72,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// Çıkış yap
   Future<void> cikisYap() async {
-    await _googleSignIn.signOut();
-    await _client.auth.signOut();
-    state = const AuthState();
+    state = state.copyWith(yukleniyor: true);
+    try {
+      if (await _googleSignIn.isSignedIn()) {
+        await _googleSignIn.signOut();
+      }
+      await _client.auth.signOut();
+      // Çıkış yapınca profili sıfırla
+      _ref.read(profilProvider.notifier).sifirla();
+    } catch (e) {
+      // Hata olsa bile devam et
+    } finally {
+      state = const AuthState();
+    }
   }
 
   static String hataMesajiCevir(String hata) {
@@ -90,5 +98,5 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
 final authNotifierProvider =
     StateNotifierProvider<AuthNotifier, AuthState>(
-  (ref) => AuthNotifier(),
+  (ref) => AuthNotifier(ref),
 );
