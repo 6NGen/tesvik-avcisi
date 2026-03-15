@@ -1,41 +1,32 @@
-# .github/workflows/scraper.yml
-# Her gece saat 02:00'de otomatik çalışır.
-# Manuel de tetiklenebilir (Actions sekmesinden).
-
 name: Teşvik Avcısı Bot
 
 on:
   schedule:
-    - cron: '0 23 * * *'  # UTC 23:00 = Türkiye 02:00
-  workflow_dispatch:        # Manuel tetikleme butonu
+    - cron: '0 23 * * *'  # Her gece 02:00 TR (UTC 23:00)
+  workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
     steps:
-      - name: Kodu çek
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Python kur
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Bağımlılıkları yükle
-        run: |
-          pip install -r scraper/requirements.txt
+      - name: Install dependencies
+        run: pip install -r scraper/requirements.txt
 
-      - name: Botu çalıştır
+      - name: Run scraper
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python scraper/scraper.py
+        run: python scraper/scraper.py
 
-      - name: Sonuçları kaydet
-        if: always()
-        run: |
-          echo "Bot tamamlandı: $(date)" >> bot_log.txt
+      - name: Send push notifications
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python scraper/push_bildirim.py

@@ -28,18 +28,30 @@ class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   // Profil varsa eşleşme motoru, yoksa tüm liste
+  
   List<TesvikModel> _filtrele(
-      List<TesvikModel> hepsi, ProfilModel? profil) {
-    if (profil == null) return hepsi;
+    List<TesvikModel> hepsi, ProfilModel? profil) {
+  List<TesvikModel> liste;
 
+  if (profil == null) {
+    liste = List<TesvikModel>.from(hepsi);
+  } else {
     final sonuclar = EslesmeServisi.eslestir(
       tesvikler: hepsi,
       profil: profil,
     );
-
-    // Sadece teşvik listesi döndür (puana göre sıralı)
-    return sonuclar.map((s) => s.tesvik).toList();
+    liste = sonuclar.map((s) => s.tesvik).toList();
   }
+
+  // Tarihe göre sırala: yaklaşan önce, tarihi olmayanlar sona
+  liste.sort((a, b) {
+    if (a.sonBasvuruTarihi == null) return 1;
+    if (b.sonBasvuruTarihi == null) return -1;
+    return a.sonBasvuruTarihi!.compareTo(b.sonBasvuruTarihi!);
+  });
+
+  return liste;
+}
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

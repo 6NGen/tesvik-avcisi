@@ -1,4 +1,4 @@
-package com.example.tesvik_app
+package com.tesvikavcisi.app
 
 import io.flutter.embedding.android.FlutterActivity
 
