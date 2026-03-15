@@ -12,7 +12,20 @@
           "package_name": "com.example.tesvik_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "268638465842-7qe7ctv0pf0mfi3u9jvja9l2qp6tco0v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.tesvik_app",
+            "certificate_hash": "84928fea5471b7755284b758c09b16009f5ec38b"
+          }
+        },
+        {
+          "client_id": "268638465842-div72coudlt52sqtlj2i2s6s6ejv1vht.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBIRcdek09lOWBaDG6OaWET7gmMcrf2rE4"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "268638465842-div72coudlt52sqtlj2i2s6s6ejv1vht.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "268638465842-sc0u1c0515fbvc63fg9k0k33inspcbhm.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.tesvikApp"
+              }
+            }
+          ]
         }
       }
     }

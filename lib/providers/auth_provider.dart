@@ -1,81 +1,94 @@
 // lib/providers/auth_provider.dart
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter/foundation.dart';
 
 // Mevcut kullanıcıyı dinleyen provider
-// null → giriş yapılmamış, User → giriş yapılmış
 final authProvider = StreamProvider<User?>((ref) {
-  return Supabase.instance.client.auth.onAuthStateChange.map((e) => e.session?.user);
+  return Supabase.instance.client.auth.onAuthStateChange
+      .map((e) => e.session?.user);
 });
 
-// Auth işlemleri için notifier
-class AuthNotifier extends StateNotifier<AsyncValue<void>> {
-  AuthNotifier() : super(const AsyncValue.data(null));
+// Auth state
+class AuthState {
+  final bool yukleniyor;
+  final String? hata;
+
+  const AuthState({
+    this.yukleniyor = false,
+    this.hata,
+  });
+
+  AuthState copyWith({bool? yukleniyor, String? hata}) => AuthState(
+        yukleniyor: yukleniyor ?? this.yukleniyor,
+        hata: hata,
+      );
+}
+
+class AuthNotifier extends StateNotifier<AuthState> {
+  AuthNotifier() : super(const AuthState());
 
   final _client = Supabase.instance.client;
+  final _googleSignIn = GoogleSignIn();
 
-  // Kayıt ol
-  Future<void> kayitOl({
-    required String email,
-    required String sifre,
-    required String adSoyad,
-  }) async {
-    state = const AsyncValue.loading();
+  /// Google ile giriş yap
+  Future<void> googleIleGirisYap() async {
+    state = state.copyWith(yukleniyor: true, hata: null);
     try {
-      await _client.auth.signUp(
-        email: email,
-        password: sifre,
-        data: {'ad_soyad': adSoyad},
-      );
-      state = const AsyncValue.data(null);
-    } catch (e) {debugPrint('KAYIT HATASI: $e');
-      state = AsyncValue.error(e, StackTrace.current);
-    }
-  }
+      // Google hesap seçici aç
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        // Kullanıcı iptal etti
+        state = state.copyWith(yukleniyor: false);
+        return;
+      }
 
-  // Giriş yap
-  Future<void> girisYap({
-    required String email,
-    required String sifre,
-  }) async {
-    state = const AsyncValue.loading();
-    try {
-      await _client.auth.signInWithPassword(
-        email: email,
-        password: sifre,
+      // Google token al
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      final accessToken = googleAuth.accessToken;
+
+      if (idToken == null) {
+        state = state.copyWith(
+          yukleniyor: false,
+          hata: 'Google girişi başarısız. Tekrar deneyin.',
+        );
+        return;
+      }
+
+      // Supabase'e giriş yap
+      await _client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: accessToken,
       );
-      state = const AsyncValue.data(null);
+
+      state = state.copyWith(yukleniyor: false);
     } catch (e) {
-      state = AsyncValue.error(e, StackTrace.current);
+      state = state.copyWith(
+        yukleniyor: false,
+        hata: hataMesajiCevir(e.toString()),
+      );
     }
   }
 
-  // Çıkış yap
+  /// Çıkış yap
   Future<void> cikisYap() async {
+    await _googleSignIn.signOut();
     await _client.auth.signOut();
+    state = const AuthState();
   }
 
-  // Hata mesajını Türkçe'ye çevir
   static String hataMesajiCevir(String hata) {
-    if (hata.contains('Invalid login credentials')) {
-      return 'E-posta veya şifre hatalı.';
-    } else if (hata.contains('Email already registered') ||
-        hata.contains('User already registered')) {
-      return 'Bu e-posta zaten kayıtlı.';
-    } else if (hata.contains('Password should be at least')) {
-      return 'Şifre en az 6 karakter olmalı.';
-    } else if (hata.contains('Unable to validate email')) {
-      return 'Geçersiz e-posta adresi.';
-    } else if (hata.contains('network')) {
-      return 'İnternet bağlantısı yok.';
-    }
+    if (hata.contains('network')) return 'İnternet bağlantısı yok.';
+    if (hata.contains('cancelled')) return 'Giriş iptal edildi.';
+    if (hata.contains('sign_in_failed')) return 'Google girişi başarısız.';
     return 'Bir hata oluştu. Tekrar deneyin.';
   }
 }
 
 final authNotifierProvider =
-    StateNotifierProvider<AuthNotifier, AsyncValue<void>>(
+    StateNotifierProvider<AuthNotifier, AuthState>(
   (ref) => AuthNotifier(),
 );

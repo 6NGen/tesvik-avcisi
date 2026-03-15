@@ -16,14 +16,18 @@ import 'screens/home/home_screen.dart';
 import 'screens/profil/profil_ekrani.dart';
 
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+Future<void> _firebaseMessagingBackgroundHandler(
+    RemoteMessage message) async {
+  await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform);
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseMessaging.onBackgroundMessage(
+      _firebaseMessagingBackgroundHandler);
   await Supabase.initialize(
     url: AppConstants.supabaseUrl,
     anonKey: AppConstants.supabaseKey,
@@ -50,7 +54,7 @@ class TesvikApp extends StatelessWidget {
   }
 }
 
-// Giriş → Profil var mı? → HomeScreen
+// Kullanıcı durumuna göre yönlendiren router
 class _AuthRouter extends ConsumerStatefulWidget {
   const _AuthRouter();
 
@@ -74,7 +78,17 @@ class _AuthRouterState extends ConsumerState<_AuthRouter> {
 
     return authAsync.when(
       loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: AppTheme.ormanYesili,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('🌾', style: TextStyle(fontSize: 56)),
+              SizedBox(height: 20),
+              CircularProgressIndicator(color: Colors.white),
+            ],
+          ),
+        ),
       ),
       error: (_, __) => const AuthEkrani(),
       data: (user) {
@@ -84,6 +98,7 @@ class _AuthRouterState extends ConsumerState<_AuthRouter> {
         // Profil yükleniyor → Bekle
         if (profilAsync.isLoading) {
           return const Scaffold(
+            backgroundColor: AppTheme.cimensoluk,
             body: Center(child: CircularProgressIndicator()),
           );
         }
