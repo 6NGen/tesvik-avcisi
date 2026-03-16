@@ -280,19 +280,7 @@ def suresi_gecenleri_pasife_al(db: Client):
 # ── KAYNAKLAR ─────────────────────────────────────────────────────
 
 KAYNAKLAR = [
-    {
-    "kurum": "Tarım ve Orman Bakanlığı",
-    "sitemap": None,
-    "sayfalar": [
-        "https://www.tarimorman.gov.tr/Haber/Index",
-        "https://www.tarimorman.gov.tr/TRGM/Haber/Index",
-        "https://www.tarimorman.gov.tr/HAYGEM/Haber/Index",
-        "https://www.tarimorman.gov.tr/BSGM/Haber/Index",
-        "https://www.tarimorman.gov.tr/Destekler",
-        "https://www.tarimorman.gov.tr/Hibe",
-    ],
-    "max_sayfa": 20,
-    },
+    
     {
         "kurum": "KOSGEB",
         "sitemap": None,
