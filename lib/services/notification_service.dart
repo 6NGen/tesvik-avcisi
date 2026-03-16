@@ -13,14 +13,18 @@ class NotificationService {
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final SupabaseServisi _db = SupabaseServisi();
 
-  // Ana başlatma metodu — main.dart'tan çağrılır
   Future<void> baslat(BuildContext context) async {
     await _fcm.requestPermission();
 
     try {
       final token = await _fcm.getToken(vapidKey: AppConstants.fcmVapidKey);
+      debugPrint('FCM Token: $token');
       if (token != null) {
+        debugPrint('Token kaydediliyor...');
         await _db.tokenKaydet(token);
+        debugPrint('Token kaydedildi!');
+      } else {
+        debugPrint('Token NULL geldi!');
       }
     } catch (e) {
       debugPrint('FCM Token hatası: $e');
@@ -28,7 +32,6 @@ class NotificationService {
 
     _fcm.onTokenRefresh.listen(_db.tokenKaydet);
 
-    // Ön planda gelen bildirimler
     FirebaseMessaging.onMessage.listen((message) {
       if (message.notification != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -42,6 +45,5 @@ class NotificationService {
     });
   }
 
-  // Eski kodla uyumluluk için
   Future<void> saveDeviceToken(String token) => _db.tokenKaydet(token);
 }

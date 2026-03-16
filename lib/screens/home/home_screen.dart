@@ -1,6 +1,7 @@
 // lib/screens/home/home_screen.dart
 // Eşleşme motoru entegre: il + ürün + tip + miktar filtrelemesi
 
+import '../tesvik/tesvik_detay_ekrani.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -718,15 +719,12 @@ class _TesvikKarti extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: tesvik.basvuruUrl != null
-              ? () async {
-                  final uri = Uri.parse(tesvik.basvuruUrl!);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri,
-                        mode: LaunchMode.externalApplication);
-                  }
-                }
-              : null,
+          onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+          builder: (_) => TesvikDetayEkrani(tesvik: tesvik),
+          ),
+           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
