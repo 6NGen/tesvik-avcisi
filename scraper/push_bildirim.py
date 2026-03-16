@@ -1,7 +1,6 @@
 # scraper/push_bildirim.py
 # Teşvik Avcısı — Push Bildirim Servisi
-# Her gece çalışır, son tarihi yaklaşan teşvikler için
-# kullanıcılara FCM bildirimi gönderir.
+# Her teşvik için 15, 7, 3 gün eşiklerinde sadece BİR KEZ bildirim gönderir.
 
 import os
 import json
@@ -61,6 +60,31 @@ def fcm_bildirim_gonder(token: str, baslik: str, icerik: str, access_token: str)
     return response.status_code == 200
 
 
+def bildirim_gonderildi_mi(db, tesvik_id: str, bildirim_turu: str) -> bool:
+    """Bu teşvik için bu eşikte daha önce bildirim gönderildi mi?"""
+    try:
+        r = db.table("gonderilen_bildirimler")\
+            .select("id")\
+            .eq("tesvik_id", tesvik_id)\
+            .eq("bildirim_turu", bildirim_turu)\
+            .execute()
+        return len(r.data or []) > 0
+    except:
+        return False
+
+
+def bildirim_kaydet(db, tesvik_id: str, bildirim_turu: str):
+    """Gönderilen bildirimi kaydet — bir daha gönderilmesin."""
+    try:
+        db.table("gonderilen_bildirimler").insert({
+            "tesvik_id": tesvik_id,
+            "bildirim_turu": bildirim_turu,
+            "gonderilme_tarihi": datetime.now().date().isoformat(),
+        }).execute()
+    except Exception as e:
+        print(f"  ⚠️  Bildirim kaydedilemedi: {e}")
+
+
 def main():
     print("=" * 55)
     print(f"🔔 Push Bildirim Servisi — {datetime.now().strftime('%d/%m/%Y %H:%M')}")
@@ -68,13 +92,21 @@ def main():
 
     db = create_client(SUPABASE_URL, SUPABASE_KEY)
     bugun = datetime.now().date()
+
+    # Eşikler: kaç gün kaldığında bildirim gönderilsin
+    ESIKLER = {
+        3:  ("3gun",  "🔴"),
+        7:  ("7gun",  "🟠"),
+        15: ("15gun", "🟡"),
+    }
+
     bildirim_tesvikler = []
 
-    # Bugünden 15 gün içinde biten tüm teşvikleri bul
+    # 15 gün içinde biten teşvikleri çek
     try:
         hedef_bitis = (bugun + timedelta(days=15)).strftime("%Y-%m-%d")
         r = db.table("tesvikler")\
-            .select("isim, son_basvuru_tarihi")\
+            .select("id, isim, son_basvuru_tarihi")\
             .eq("aktif", True)\
             .gte("son_basvuru_tarihi", bugun.strftime("%Y-%m-%d"))\
             .lte("son_basvuru_tarihi", hedef_bitis)\
@@ -83,17 +115,29 @@ def main():
         for t in (r.data or []):
             tarih = datetime.strptime(t["son_basvuru_tarihi"], "%Y-%m-%d").date()
             kalan = (tarih - bugun).days
-            bildirim_tesvikler.append({
-                "isim": t["isim"],
-                "kalan_gun": kalan,
-            })
-            print(f"  ⏰ {kalan} gün kaldı: {t['isim'][:50]}")
+
+            # Hangi eşiğe denk geliyor?
+            for esik_gun, (esik_tur, emoji) in ESIKLER.items():
+                if kalan == esik_gun:
+                    # Daha önce bu eşik için bildirim gönderildiyse atla
+                    if bildirim_gonderildi_mi(db, t["id"], esik_tur):
+                        print(f"  ⏭️  Zaten gönderildi ({esik_gun} gün): {t['isim'][:40]}")
+                    else:
+                        bildirim_tesvikler.append({
+                            "id": t["id"],
+                            "isim": t["isim"],
+                            "kalan_gun": kalan,
+                            "esik_tur": esik_tur,
+                            "emoji": emoji,
+                        })
+                        print(f"  ⏰ {kalan} gün kaldı: {t['isim'][:40]}")
+                    break
 
     except Exception as e:
         print(f"  ⚠️  Sorgu hatası: {e}")
 
     if not bildirim_tesvikler:
-        print("✅ Bugün bildirim gönderilecek teşvik yok.")
+        print("✅ Bugün gönderilecek yeni bildirim yok.")
         return
 
     # FCM tokenları al
@@ -119,20 +163,16 @@ def main():
     basarili = 0
     for tesvik in bildirim_tesvikler:
         kalan = tesvik["kalan_gun"]
-
-        if kalan <= 3:
-            emoji = "🔴"
-        elif kalan <= 7:
-            emoji = "🟠"
-        else:
-            emoji = "🟡"
-
+        emoji = tesvik["emoji"]
         baslik = f"{emoji} Son {kalan} Gün!"
         icerik = f'{tesvik["isim"][:60]} için başvuru süresi dolmak üzere.'
 
         for token in tokenlar:
             if fcm_bildirim_gonder(token, baslik, icerik, access_token):
                 basarili += 1
+
+        # Gönderildi olarak kaydet
+        bildirim_kaydet(db, tesvik["id"], tesvik["esik_tur"])
 
     print(f"\n✅ {basarili} bildirim gönderildi.")
     print("=" * 55)
