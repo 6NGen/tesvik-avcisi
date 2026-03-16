@@ -280,9 +280,9 @@ def suresi_gecenleri_pasife_al(db: Client):
 
 KAYNAKLAR = [
     {
-        "kurum": "Tarım ve Orman Bakanlığı",
-        "sitemap": "https://tarim.gov.tr:443/sitemap.xml",
-        "max_sayfa": 50,
+    "kurum": "Tarım ve Orman Bakanlığı",
+    "sitemap": "https://tarim.gov.tr:443/sitemap0.xml",
+    "max_sayfa": 50,
     },
     {
         "kurum": "TKDK (IPARD)",
