@@ -278,7 +278,7 @@ def suresi_gecenleri_pasife_al(db: Client):
 KAYNAKLAR = [
     {
         "kurum": "Tarım ve Orman Bakanlığı",
-        "sitemap": "https://tarimorman.gov.tr/sitemap.xml",
+        "sitemap": "sitemap": "https://tarim.gov.tr:443/sitemap.xml",
         "max_sayfa": 50,
     },
     {
