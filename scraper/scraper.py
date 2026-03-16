@@ -58,6 +58,7 @@ def sitemap_url_cek(sitemap_url: str) -> list:
         r = requests.get(sitemap_url, headers=HEADERS, timeout=20, verify=False)
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "xml")
+        print(f"  🔍 Sitemap içeriği (ilk 200 kar): {r.text[:200]}")
 
         # İç içe sitemap index
         for sitemap in soup.find_all("sitemap"):
