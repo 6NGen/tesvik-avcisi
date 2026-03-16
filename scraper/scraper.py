@@ -3,6 +3,9 @@
 # Tarım Bakanlığı ve TKDK sitemap'lerini tarar.
 # Bot engeli yok, kota yok, Gemini yok.
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 import os
 import re
 import time
@@ -52,7 +55,7 @@ def sitemap_url_cek(sitemap_url: str) -> list:
     """Sitemap'ten URL listesi çeker. İç içe sitemap'leri de destekler."""
     urls = []
     try:
-        r = requests.get(sitemap_url, headers=HEADERS, timeout=20)
+        r = requests.get(sitemap_url, headers=HEADERS, timeout=20, verify=False)
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "xml")
 
@@ -91,7 +94,7 @@ def hibe_url_mu(url: str) -> bool:
 def sayfa_tara(url: str, kurum: str) -> dict | None:
     """Tek bir sayfayı tarar, teşvik verisi döndürür."""
     try:
-        r = requests.get(url, headers=HEADERS, timeout=15)
+        r = requests.get(url, headers=HEADERS, timeout=15, verify=False)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "lxml")
 
