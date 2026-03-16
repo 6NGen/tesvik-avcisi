@@ -282,18 +282,16 @@ def suresi_gecenleri_pasife_al(db: Client):
 KAYNAKLAR = [
     {
     "kurum": "Tarım ve Orman Bakanlığı",
-    "sitemap": "https://tarim.gov.tr:443/sitemap0.xml",
-    "max_sayfa": 50,
-    },
-    {
-        "kurum": "TKDK (IPARD)",
-        "sitemap": None,  # Sitemap yok, doğrudan sayfalar
-        "sayfalar": [
-            "https://www.tkdk.gov.tr/Hibe/Index",
-            "https://www.tkdk.gov.tr/Program/Index",
-            "https://www.tkdk.gov.tr/Duyuru/Index",
-        ],
-        "max_sayfa": 10,
+    "sitemap": None,
+    "sayfalar": [
+        "https://www.tarimorman.gov.tr/Haber/Index",
+        "https://www.tarimorman.gov.tr/TRGM/Haber/Index",
+        "https://www.tarimorman.gov.tr/HAYGEM/Haber/Index",
+        "https://www.tarimorman.gov.tr/BSGM/Haber/Index",
+        "https://www.tarimorman.gov.tr/Destekler",
+        "https://www.tarimorman.gov.tr/Hibe",
+    ],
+    "max_sayfa": 20,
     },
     {
         "kurum": "KOSGEB",
