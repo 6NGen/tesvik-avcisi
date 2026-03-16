@@ -280,7 +280,16 @@ def suresi_gecenleri_pasife_al(db: Client):
 # ── KAYNAKLAR ─────────────────────────────────────────────────────
 
 KAYNAKLAR = [
-    
+    {
+    "kurum": "TKDK (IPARD)",
+    "sitemap": None,
+    "sayfalar": [
+        "https://www.tkdk.gov.tr/Hibe/Index",
+        "https://www.tkdk.gov.tr/Program/Index",
+        "https://www.tkdk.gov.tr/Duyuru/Index",
+    ],
+    "max_sayfa": 10,
+},
     {
         "kurum": "KOSGEB",
         "sitemap": None,
