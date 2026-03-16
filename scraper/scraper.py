@@ -43,7 +43,7 @@ ICERIK_ANAHTAR = [
 KARA_LISTE_URL = [
     "haber", "basin", "basın", "galeri", "foto", "video",
     "iletisim", "iletişim", "hakkimizda", "hakkında",
-    "personel", "ihale", "kariyer",
+    "personel", "ihale", "kariyer", "bulunamadi", "bulunamadı", "404",
 ]
 
 # ── SİTEMAP TARAYICI ─────────────────────────────────────────────
@@ -278,7 +278,7 @@ def suresi_gecenleri_pasife_al(db: Client):
 KAYNAKLAR = [
     {
         "kurum": "Tarım ve Orman Bakanlığı",
-        "sitemap": "https://tarim.gov.tr:443/sitemap.xml",
+        "sitemap": "https://tarimorman.gov.tr/sitemap.xml/sitemap.xml",
         "max_sayfa": 50,
     },
     {
