@@ -15,11 +15,12 @@ dependencies:
   flutter_riverpod: ^2.5.1
   flutter:
     sdk: flutter
+  flutter_dotenv: ^5.2.1
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2
   http: ^1.2.1
   supabase_flutter: ^2.6.0
-  google_generative_ai: ^0.4.3 # YAPAY ZEKA PAKETİ EKLENDİ
+  google_generative_ai: ^0.4.7 # YAPAY ZEKA PAKETİ EKLENDİ
   flutter_markdown: ^0.7.7+1
   url_launcher: ^6.3.2
   firebase_core: ^4.5.0
@@ -33,6 +34,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - .env
     - assets/icon/
 
 flutter_launcher_icons:

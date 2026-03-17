@@ -12,7 +12,7 @@ class GeminiServisi {
   GeminiServisi._internal();
 
   late final GenerativeModel _model = GenerativeModel(
-    model: AppConstants.geminiModel,
+    model: 'gemini-2.5-flash',
     apiKey: AppConstants.geminiApiKey,
   );
 
@@ -45,6 +45,7 @@ ${profil.hayvanSayisi != null ? '- Hayvan: ${profil.hayvanSayisi} adet' : ''}
         : tesvikler.map((t) => t.promptSatiri()).join('\n');
 
     final promptStr = '''
+    ÖNEMLİ GİZLİLİK TALİMATI: Bu belgede TC Kimlik No, ad-soyad, adres gibi kişisel veriler olabilir. Bu verileri ASLA kaydetme, tekrar etme veya analiz sonucuna dahil etme. Sadece tarımsal verileri (arazi büyüklüğü, ürün türü, il) çıkar.
 Bugünün tarihi: $bugun. Sen profesyonel bir tarım danışmanısın.
 
 $profilMetni
