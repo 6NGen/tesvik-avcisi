@@ -2,6 +2,7 @@
 # TKDK çağrı takvimi PDF'ini okuyup Supabase'e kaydeder.
 # Kullanım: scraper/ klasörüne tkdk_takvim.pdf ekle → bot otomatik işler.
 
+import glob
 import os
 import json
 import requests
@@ -12,7 +13,11 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-PDF_YOLU = "scraper/tkdk_takvim.pdf"
+pdf_dosyalari = glob.glob("scraper/*.pdf")
+if not pdf_dosyalari:
+    print("⏭️  scraper/ klasöründe PDF bulunamadı, atlanıyor.")
+    exit(0)
+PDF_YOLU = pdf_dosyalari[0]
 
 PROMPT = """
 Bu PDF bir TKDK (Tarım ve Kırsal Kalkınmayı Destekleme Kurumu) çağrı takvimi belgesidir.
