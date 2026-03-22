@@ -33,7 +33,6 @@ def supabase_baglan() -> Client:
 
 
 def mevcut_isimler(db: Client) -> set:
-    """Supabase'deki mevcut teşvik isimlerini döndürür."""
     try:
         r = db.table("tesvikler").select("isim").execute()
         return {row["isim"].strip() for row in (r.data or []) if row.get("isim")}
@@ -42,7 +41,6 @@ def mevcut_isimler(db: Client) -> set:
 
 
 def kaydet(db: Client, tesvik: dict, mevcut: set) -> bool:
-    """Teşviki Supabase'e ekler, zaten varsa atlar."""
     isim = tesvik.get("isim", "").strip()
     if not isim or len(isim) < 10:
         return False
@@ -67,10 +65,10 @@ def kaydet(db: Client, tesvik: dict, mevcut: set) -> bool:
 
 
 def guncelle(db: Client, tesvik: dict) -> bool:
-    """Mevcut teşvikin tarih ve aktiflik bilgisini günceller."""
     isim = tesvik.get("isim", "").strip()
     try:
         db.table("tesvikler").update({
+            "basvuru_url": tesvik.get("basvuru_url"),
             "son_basvuru_tarihi": tesvik.get("son_basvuru_tarihi"),
             "aktif": True,
             "guncelleme": datetime.now().isoformat(),
@@ -81,7 +79,6 @@ def guncelle(db: Client, tesvik: dict) -> bool:
 
 
 def suresi_gecenleri_pasife_al(db: Client):
-    """Son başvuru tarihi geçmiş teşvikleri pasife alır."""
     bugun = datetime.now().strftime("%Y-%m-%d")
     try:
         db.table("tesvikler").update({"aktif": False})\
@@ -96,13 +93,8 @@ def suresi_gecenleri_pasife_al(db: Client):
 # ── TARİH PARSER ─────────────────────────────────────────────────
 
 def tarih_parse(metin: str) -> str | None:
-    """
-    'Sürekli Aktif', '31.12.2026', '05.09.2027' gibi
-    metinleri YYYY-MM-DD formatına çevirir.
-    """
     if not metin or "sürekli" in metin.lower():
         return None
-
     m = re.search(r'(\d{1,2})\.(\d{1,2})\.(20\d{2})', metin)
     if m:
         try:
@@ -157,7 +149,6 @@ ETIKET_ESLEME = {
 
 
 def urun_ve_etiket_cikar(isim: str) -> tuple[list, list]:
-    """Teşvik isminden ürün ve etiket listesi çıkarır."""
     isim_lower = isim.lower()
     urunler = []
     etiketler = ["tarım"]
@@ -180,7 +171,8 @@ def urun_ve_etiket_cikar(isim: str) -> tuple[list, list]:
 def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     """
     yatirimadestek.gov.tr'den Tarım Bakanlığı desteklerini çeker.
-    Teşvik isimleri tarimorman.gov.tr'ye link veren <a> taglarında.
+    Her teşvik için: isim (tarimorman linki), PDF özet linki, son başvuru tarihi.
+    Bunlar sayfada her destek kartında sırayla geliyor.
     """
     url = (
         "https://www.yatirimadestek.gov.tr/gelismis-arama"
@@ -198,45 +190,80 @@ def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     soup = BeautifulSoup(r.text, "lxml")
     eklenen = 0
 
-    # Teşvik isimleri tarimorman.gov.tr'ye link veren <a> taglarında
-    tesvik_linkleri = soup.find_all(
-        "a",
-        href=lambda h: h and "tarimorman.gov.tr" in h
-    )
+    # Sayfadaki tüm "TARIM VE ORMAN BAKANLIĞI" destek kartlarını bul.
+    # Her kartta: tarimorman.gov.tr linki (isim), ozet PDF linki, tarih bilgisi var.
+    # Kartlar col-md veya benzeri div içinde gruplu geliyor.
+    # En güvenilir yöntem: tarimorman linklerini bul, her birinin
+    # hemen ardından gelen ozet PDF linkini ve tarih metnini eşleştir.
 
-    # Son başvuru tarihlerini sırayla çek
+    tum_linkler = soup.find_all("a", href=True)
+
+    # Teşvik ismi linkleri: tarimorman.gov.tr'ye giden
+    # PDF linkleri: yatirimadestek.gov.tr/pdf/ ile başlayan ve ozet- içeren
+    # Sayfada sıra: [teşvik ismi linki] → [pdf linkleri] → [tarih bilgisi]
+
+    # Tüm linkleri sırayla işle, destek kartlarını grupla
+    destek_kartlari = []
+    i = 0
+    while i < len(tum_linkler):
+        a = tum_linkler[i]
+        href = a.get("href", "")
+
+        # Teşvik ismi: tarimorman.gov.tr'ye link
+        if "tarimorman.gov.tr" in href:
+            isim = a.get_text(strip=True)
+            if len(isim) < 10:
+                i += 1
+                continue
+
+            # Bu linkten sonraki elementlerde PDF ve tarihi ara
+            pdf_url = None
+            tarih_metin = None
+
+            # Sonraki 20 linke bak
+            for j in range(i + 1, min(i + 20, len(tum_linkler))):
+                sonraki_href = tum_linkler[j].get("href", "")
+
+                # Bir sonraki teşvik ismine gelince dur
+                if "tarimorman.gov.tr" in sonraki_href:
+                    break
+
+                # ozet PDF linki
+                if "yatirimadestek.gov.tr/pdf" in sonraki_href and "ozet-" in sonraki_href:
+                    pdf_url = sonraki_href
+                    break
+
+            destek_kartlari.append({
+                "isim": isim,
+                "pdf_url": pdf_url,
+            })
+
+        i += 1
+
+    # Tarihleri sırayla çek — sayfa sırası teşvik sırasıyla eşleşiyor
     tum_metin = soup.get_text(separator="\n")
     tarih_pattern = re.compile(r'Son Başvuru Tarihi\s*:\s*([^\n]+)', re.IGNORECASE)
     tarihler = tarih_pattern.findall(tum_metin)
-    tarih_iter = iter(tarihler)
 
-    islenen = set()
-    for a in tesvik_linkleri:
-        isim = a.get_text(strip=True)
+    # Kartlarla tarihleri eşleştir
+    for idx, kart in enumerate(destek_kartlari):
+        isim = kart["isim"]
 
-        # Kısa, tekrar eden veya anlamsız olanları atla
-        if len(isim) < 10 or isim in islenen:
-            continue
-        if any(k in isim.lower() for k in ["tarimorman", "http", "logo", "pdf"]):
-            continue
+        tarih_metin = tarihler[idx] if idx < len(tarihler) else ""
+        son_tarih = tarih_parse(tarih_metin.strip())
 
-        islenen.add(isim)
+        # PDF linki varsa onu kullan, yoksa liste sayfası
+        basvuru_url = kart["pdf_url"] or (
+            "https://www.yatirimadestek.gov.tr/gelismis-arama"
+            "?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1"
+        )
 
-        try:
-            tarih_metin = next(tarih_iter).strip()
-        except StopIteration:
-            tarih_metin = ""
-
-        son_tarih = tarih_parse(tarih_metin)
         urunler, etiketler = urun_ve_etiket_cikar(isim)
 
         tesvik = {
             "isim": isim[:250],
             "kurum": "Tarım ve Orman Bakanlığı",
-            "basvuru_url": (
-                "https://www.yatirimadestek.gov.tr/gelismis-arama"
-                "?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1"
-            ),
+            "basvuru_url": basvuru_url,
             "son_basvuru_tarihi": son_tarih,
             "uygun_iller": [],
             "uygun_urunler": urunler,
@@ -245,11 +272,11 @@ def yatirimadestek_tara(db: Client, mevcut: set) -> int:
 
         if isim in mevcut:
             guncelle(db, tesvik)
-            print(f"  🔄 Güncellendi: {isim[:60]}")
+            print(f"  🔄 Güncellendi: {isim[:55]} | Tarih: {son_tarih or 'Sürekli'}")
         elif kaydet(db, tesvik, mevcut):
             eklenen += 1
             mevcut.add(isim)
-            print(f"  ➕ Eklendi: {isim[:60]}")
+            print(f"  ➕ Eklendi: {isim[:55]} | Tarih: {son_tarih or 'Sürekli'}")
 
     return eklenen
 
