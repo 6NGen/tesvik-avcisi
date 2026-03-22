@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/tesvik_model.dart';
 import '../../models/profil_model.dart';
@@ -21,9 +22,33 @@ final tesviklerProvider = StreamProvider<List<TesvikModel>>((ref) {
   return SupabaseServisi().tesviklerStream();
 });
 
-/// Session boyunca gizlenen süresi dolmuş teşvik ID'leri
+/// Cihaza kalıcı olarak kaydedilen gizli teşvik ID'leri
 final gizlenenTesviklerProvider =
-    StateProvider<Set<String>>((ref) => {});
+    StateNotifierProvider<GizlenenTesviklerNotifier, Set<String>>(
+  (ref) => GizlenenTesviklerNotifier(),
+);
+
+class GizlenenTesviklerNotifier extends StateNotifier<Set<String>> {
+  static const _key = 'gizlenen_tesvikler';
+
+  GizlenenTesviklerNotifier() : super({}) {
+    _yukle();
+  }
+
+  /// Cihazdan yükle
+  Future<void> _yukle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final liste = prefs.getStringList(_key) ?? [];
+    state = liste.toSet();
+  }
+
+  /// ID ekle ve cihaza kaydet
+  Future<void> gizle(String id) async {
+    state = {...state, id};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_key, state.toList());
+  }
+}
 
 const String cksEdevletUrl =
     'https://www.turkiye.gov.tr/tarim-ve-orman-bakanligi-ciftci-kayit-sistemi';
@@ -42,7 +67,6 @@ class HomeScreen extends ConsumerWidget {
       liste = sonuclar.map((s) => s.tesvik).toList();
     }
 
-    // Gizlenenleri çıkar
     liste = liste.where((t) => !gizlenenler.contains(t.id)).toList();
 
     liste.sort((a, b) {
@@ -230,11 +254,9 @@ class HomeScreen extends ConsumerWidget {
                               filtreli[i]
                                   .sonBasvuruTarihi!
                                   .isBefore(DateTime.now())
-                          ? () {
-                              ref
-                                  .read(gizlenenTesviklerProvider.notifier)
-                                  .update((s) => {...s, filtreli[i].id});
-                            }
+                          ? () => ref
+                              .read(gizlenenTesviklerProvider.notifier)
+                              .gizle(filtreli[i].id)
                           : null,
                     ),
                     childCount: filtreli.length,
@@ -646,7 +668,7 @@ class _BosGorunum extends StatelessWidget {
 class _TesvikKarti extends StatelessWidget {
   final TesvikModel tesvik;
   final int index;
-  final VoidCallback? onGizle; // null ise swipe devre dışı
+  final VoidCallback? onGizle;
 
   const _TesvikKarti(
       {required this.tesvik, required this.index, this.onGizle});
@@ -767,7 +789,6 @@ class _TesvikKarti extends StatelessWidget {
       ),
     );
 
-    // Sadece süresi dolmuş kartlara swipe ekle
     if (onGizle == null) return kart;
 
     return Dismissible(

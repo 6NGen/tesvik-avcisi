@@ -152,17 +152,14 @@ def urun_ve_etiket_cikar(isim: str) -> tuple[list, list]:
     isim_lower = isim.lower()
     urunler = []
     etiketler = ["tarım"]
-
     for anahtar, urun_listesi in URUN_ESLEME.items():
         if anahtar in isim_lower:
             for u in urun_listesi:
                 if u not in urunler:
                     urunler.append(u)
-
     for anahtar, etiket in ETIKET_ESLEME.items():
         if anahtar in isim_lower and etiket not in etiketler:
             etiketler.append(etiket)
-
     return urunler[:8], etiketler
 
 
@@ -170,9 +167,10 @@ def urun_ve_etiket_cikar(isim: str) -> tuple[list, list]:
 
 def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     """
-    yatirimadestek.gov.tr'den Tarım Bakanlığı desteklerini çeker.
-    Her teşvik için: isim (tarimorman linki), PDF özet linki, son başvuru tarihi.
-    Bunlar sayfada her destek kartında sırayla geliyor.
+    Her div.item kartından şunları çeker:
+    - İsim: div.detail-title > a metni
+    - URL: a.fizibilitePaylas[data-url] → her teşvikin kendi sayfası
+    - Tarih: div.dplabel "Son Başvuru" olan satırın div.dpval değeri
     """
     url = (
         "https://www.yatirimadestek.gov.tr/gelismis-arama"
@@ -190,73 +188,42 @@ def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     soup = BeautifulSoup(r.text, "lxml")
     eklenen = 0
 
-    # Sayfadaki tüm "TARIM VE ORMAN BAKANLIĞI" destek kartlarını bul.
-    # Her kartta: tarimorman.gov.tr linki (isim), ozet PDF linki, tarih bilgisi var.
-    # Kartlar col-md veya benzeri div içinde gruplu geliyor.
-    # En güvenilir yöntem: tarimorman linklerini bul, her birinin
-    # hemen ardından gelen ozet PDF linkini ve tarih metnini eşleştir.
+    # Her destek kartı div.item içinde
+    kartlar = soup.find_all("div", class_="item")
+    print(f"  {len(kartlar)} destek kartı bulundu")
 
-    tum_linkler = soup.find_all("a", href=True)
+    for kart in kartlar:
+        # 1. İsim — detail-title içindeki a tagı
+        baslik_div = kart.find("div", class_="detail-title")
+        if not baslik_div:
+            continue
+        isim_a = baslik_div.find("a")
+        if not isim_a:
+            continue
+        isim = isim_a.get_text(strip=True)
+        if len(isim) < 10:
+            continue
 
-    # Teşvik ismi linkleri: tarimorman.gov.tr'ye giden
-    # PDF linkleri: yatirimadestek.gov.tr/pdf/ ile başlayan ve ozet- içeren
-    # Sayfada sıra: [teşvik ismi linki] → [pdf linkleri] → [tarih bilgisi]
+        # 2. Kendi sayfa URL'si — fizibilitePaylas data-url
+        paylasim = kart.find("a", class_="fizibilitePaylas")
+        if paylasim and paylasim.get("data-url"):
+            basvuru_url = paylasim["data-url"]
+        else:
+            # Fallback: ozet PDF
+            pdf_a = kart.find("a", href=lambda h: h and "ozet-" in h)
+            basvuru_url = pdf_a["href"] if pdf_a else (
+                "https://www.yatirimadestek.gov.tr/gelismis-arama"
+                "?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1"
+            )
 
-    # Tüm linkleri sırayla işle, destek kartlarını grupla
-    destek_kartlari = []
-    i = 0
-    while i < len(tum_linkler):
-        a = tum_linkler[i]
-        href = a.get("href", "")
-
-        # Teşvik ismi: tarimorman.gov.tr'ye link
-        if "tarimorman.gov.tr" in href:
-            isim = a.get_text(strip=True)
-            if len(isim) < 10:
-                i += 1
-                continue
-
-            # Bu linkten sonraki elementlerde PDF ve tarihi ara
-            pdf_url = None
-            tarih_metin = None
-
-            # Sonraki 20 linke bak
-            for j in range(i + 1, min(i + 20, len(tum_linkler))):
-                sonraki_href = tum_linkler[j].get("href", "")
-
-                # Bir sonraki teşvik ismine gelince dur
-                if "tarimorman.gov.tr" in sonraki_href:
-                    break
-
-                # ozet PDF linki
-                if "yatirimadestek.gov.tr/pdf" in sonraki_href and "ozet-" in sonraki_href:
-                    pdf_url = sonraki_href
-                    break
-
-            destek_kartlari.append({
-                "isim": isim,
-                "pdf_url": pdf_url,
-            })
-
-        i += 1
-
-    # Tarihleri sırayla çek — sayfa sırası teşvik sırasıyla eşleşiyor
-    tum_metin = soup.get_text(separator="\n")
-    tarih_pattern = re.compile(r'Son Başvuru Tarihi\s*:\s*([^\n]+)', re.IGNORECASE)
-    tarihler = tarih_pattern.findall(tum_metin)
-
-    # Kartlarla tarihleri eşleştir
-    for idx, kart in enumerate(destek_kartlari):
-        isim = kart["isim"]
-
-        tarih_metin = tarihler[idx] if idx < len(tarihler) else ""
-        son_tarih = tarih_parse(tarih_metin.strip())
-
-        # PDF linki varsa onu kullan, yoksa liste sayfası
-        basvuru_url = kart["pdf_url"] or (
-            "https://www.yatirimadestek.gov.tr/gelismis-arama"
-            "?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1"
-        )
+        # 3. Son başvuru tarihi — dprow içinde "Son Başvuru" etiketini bul
+        son_tarih = None
+        for dprow in kart.find_all("div", class_="dprow"):
+            label = dprow.find("div", class_="dplabel")
+            val = dprow.find("div", class_="dpval")
+            if label and val and "Son Başvuru" in label.get_text():
+                son_tarih = tarih_parse(val.get_text(strip=True))
+                break
 
         urunler, etiketler = urun_ve_etiket_cikar(isim)
 
