@@ -103,7 +103,6 @@ def tarih_parse(metin: str) -> str | None:
     if not metin or "sürekli" in metin.lower():
         return None
 
-    # DD.MM.YYYY
     m = re.search(r'(\d{1,2})\.(\d{1,2})\.(20\d{2})', metin)
     if m:
         try:
@@ -120,7 +119,7 @@ URUN_ESLEME = {
     "hayvancılık": ["Büyükbaş (Süt)", "Büyükbaş (Et)", "Küçükbaş (Koyun)", "Küçükbaş (Keçi)"],
     "büyükbaş": ["Büyükbaş (Süt)", "Büyükbaş (Et)"],
     "küçükbaş": ["Küçükbaş (Koyun)", "Küçükbaş (Keçi)"],
-    "besiçilik": ["Büyükbaş (Et)"],
+    "besicilik": ["Büyükbaş (Et)"],
     "arıcılık": ["Süzme Bal", "Petek Bal", "Ana Arı", "Polen", "Propolis", "Arı Sütü"],
     "bal": ["Süzme Bal", "Petek Bal"],
     "organik": ["Organik Tahıl", "Organik Sebze", "Organik Meyve", "Organik Bal", "Organik Süt Ürünleri"],
@@ -138,7 +137,7 @@ ETIKET_ESLEME = {
     "hayvancılık": "hayvancılık",
     "büyükbaş": "hayvancılık",
     "küçükbaş": "hayvancılık",
-    "besiçilik": "hayvancılık",
+    "besicilik": "hayvancılık",
     "arıcılık": "arıcılık",
     "organik": "organik",
     "fındık": "bitkisel",
@@ -181,7 +180,7 @@ def urun_ve_etiket_cikar(isim: str) -> tuple[list, list]:
 def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     """
     yatirimadestek.gov.tr'den Tarım Bakanlığı desteklerini çeker.
-    Düz HTML, JavaScript yok — requests ile düzgün çalışır.
+    Teşvik isimleri tarimorman.gov.tr'ye link veren <a> taglarında.
     """
     url = (
         "https://www.yatirimadestek.gov.tr/gelismis-arama"
@@ -199,38 +198,30 @@ def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     soup = BeautifulSoup(r.text, "lxml")
     eklenen = 0
 
-    # Her destek kartını bul
-    # Sayfada "TARIM VE ORMAN BAKANLIĞI" başlıklı kartlar var
-    kartlar = soup.find_all("div", class_=lambda c: c and "col" in c)
+    # Teşvik isimleri tarimorman.gov.tr'ye link veren <a> taglarında
+    tesvik_linkleri = soup.find_all(
+        "a",
+        href=lambda h: h and "tarimorman.gov.tr" in h
+    )
 
-    # Alternatif: tüm metni satır satır parse et
-    # Sayfa yapısı: isim, aktiflik, son başvuru tarihi sırayla geliyor
-    metin_bloklari = []
-    for tag in soup.find_all(["h5", "h4", "h3", "a", "span", "div"]):
-        metin = tag.get_text(strip=True)
-        if len(metin) > 15 and "TARIM VE ORMAN" not in metin and "AKTİF" not in metin:
-            if any(k in metin.lower() for k in [
-                "destek", "kredi", "hibe", "tarım", "hayvan",
-                "arıcılık", "organik", "fındık", "zeytin", "gübre",
-                "mazot", "sigorta", "ağaçlandırma", "besiçilik"
-            ]):
-                metin_bloklari.append(metin)
-
-    # Son başvuru tarihlerini ayrı çek
-    tarih_pattern = re.compile(r'Son Başvuru Tarihi\s*:\s*([^\n]+)', re.IGNORECASE)
+    # Son başvuru tarihlerini sırayla çek
     tum_metin = soup.get_text(separator="\n")
+    tarih_pattern = re.compile(r'Son Başvuru Tarihi\s*:\s*([^\n]+)', re.IGNORECASE)
     tarihler = tarih_pattern.findall(tum_metin)
     tarih_iter = iter(tarihler)
 
-    # İsim + tarih eşleştir
     islenen = set()
-    for isim in metin_bloklari:
-        isim = isim.strip()[:250]
-        if isim in islenen or len(isim) < 15:
+    for a in tesvik_linkleri:
+        isim = a.get_text(strip=True)
+
+        # Kısa, tekrar eden veya anlamsız olanları atla
+        if len(isim) < 10 or isim in islenen:
             continue
+        if any(k in isim.lower() for k in ["tarimorman", "http", "logo", "pdf"]):
+            continue
+
         islenen.add(isim)
 
-        # Sıradaki tarihi al
         try:
             tarih_metin = next(tarih_iter).strip()
         except StopIteration:
@@ -240,9 +231,12 @@ def yatirimadestek_tara(db: Client, mevcut: set) -> int:
         urunler, etiketler = urun_ve_etiket_cikar(isim)
 
         tesvik = {
-            "isim": isim,
+            "isim": isim[:250],
             "kurum": "Tarım ve Orman Bakanlığı",
-            "basvuru_url": "https://www.yatirimadestek.gov.tr/gelismis-arama?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1",
+            "basvuru_url": (
+                "https://www.yatirimadestek.gov.tr/gelismis-arama"
+                "?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1"
+            ),
             "son_basvuru_tarihi": son_tarih,
             "uygun_iller": [],
             "uygun_urunler": urunler,
@@ -286,7 +280,6 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
         print(f"  ⚠️  Bağlantı hatası: {e}")
         return 0
 
-    # Sayfa içindeki linkleri topla
     linkler = set()
     for a in soup.find_all("a", href=True):
         href = a["href"]
@@ -306,7 +299,6 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
             pr.raise_for_status()
             psoup = BeautifulSoup(pr.text, "lxml")
 
-            # Başlık çek
             baslik = None
             for tag in ["h1", "h2"]:
                 el = psoup.find(tag)
