@@ -15,6 +15,7 @@ import 'services/notification_service.dart';
 import 'screens/auth/auth_ekrani.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/profil/profil_ekrani.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(
@@ -24,8 +25,10 @@ Future<void> _firebaseMessagingBackgroundHandler(
 }
 
 void main() async {
-  await dotenv.load(fileName: ".env");
+  
   WidgetsFlutterBinding.ensureInitialized();
+  await MobileAds.instance.initialize();
+  await dotenv.load(fileName: ".env");
   await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(

@@ -45,18 +45,15 @@ class TesvikModel {
     );
   }
 
-  // Gemini prompt satırı
   String promptSatiri() {
     return '- İsim: $isim'
         ' | Link: ${basvuruUrl ?? "Yok"}'
         ' | Son Tarih: ${sonBasvuruTarihi?.toString().split(" ")[0] ?? "Sürekli"}';
   }
 
-  // Son başvuruya 15 günden az mı kaldı?
   bool get kritikTarihMi {
     if (sonBasvuruTarihi == null) return false;
-    final kalan =
-        sonBasvuruTarihi!.difference(DateTime.now()).inDays;
+    final kalan = sonBasvuruTarihi!.difference(DateTime.now()).inDays;
     return kalan >= 0 && kalan <= 15;
   }
 }
@@ -66,18 +63,23 @@ class AnalizSonucu {
   final String metin;
   final bool kritikUyariVar;
   final DateTime analizZamani;
+  final Map<String, dynamic>? cikarilanProfil; // belgeden çekilen profil verisi
 
   const AnalizSonucu({
     required this.metin,
     required this.kritikUyariVar,
     required this.analizZamani,
+    this.cikarilanProfil,
   });
 
   String get belgeOzeti =>
       'Belge Analizi - ${analizZamani.day}/${analizZamani.month}/${analizZamani.year}';
 
-  String get temizMetin =>
-      metin.replaceAll('KRITIK_UYARI', '').trim();
+  // KRITIK_UYARI ve PROFIL_JSON satırını kullanıcıya gösterme
+  String get temizMetin => metin
+      .replaceAll('KRITIK_UYARI', '')
+      .replaceAll(RegExp(r'PROFIL_JSON:\{[^\n]*\}'), '')
+      .trim();
 }
 
 // Başvuru takipçisi modeli
@@ -86,7 +88,7 @@ class AnalizGecmisi {
   final String belgeOzeti;
   final String aiSonucu;
   final DateTime olusturulma;
-  final String basvuruDurumu; // 'hazirlaniyor' | 'gonderildi' | 'sonuclandi'
+  final String basvuruDurumu;
 
   const AnalizGecmisi({
     required this.id,
@@ -102,11 +104,9 @@ class AnalizGecmisi {
       belgeOzeti: json['belge_ozeti'] as String? ?? 'Analiz',
       aiSonucu: json['ai_sonucu'] as String? ?? '',
       olusturulma: json['olusturulma'] != null
-          ? DateTime.tryParse(json['olusturulma'].toString()) ??
-              DateTime.now()
+          ? DateTime.tryParse(json['olusturulma'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      basvuruDurumu:
-          json['basvuru_durumu'] as String? ?? 'hazirlaniyor',
+      basvuruDurumu: json['basvuru_durumu'] as String? ?? 'hazirlaniyor',
     );
   }
 }

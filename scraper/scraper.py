@@ -1,7 +1,6 @@
 # scraper/scraper.py
-# Teşvik Avcısı Bot v3 — Sitemap Tabanlı
-# Tarım Bakanlığı ve TKDK sitemap'lerini tarar.
-# Bot engeli yok, kota yok, Gemini yok.
+# Teşvik Avcısı Bot v4 — yatirimadestek.gov.tr + KOSGEB
+# Her gece 02:00 TR (UTC 23:00) çalışır.
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -26,203 +25,6 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# ── HIBE/DESTEK ANAHTAR KELİMELERİ ──────────────────────────────
-
-# URL'de bulunursa o sayfa taranır
-URL_ANAHTAR = [
-    "destek", "hibe", "odeme", "ödeme", "tarim-destekleri",
-    "kkydp", "ipard", "kirsal", "kırsal", "hayvancilik",
-    "hayvancılık", "aricil", "arıcıl", "organik", "sulama",
-    "genç-çiftçi", "genc-ciftci", "mazot", "gubre", "gübre",
-]
-
-# Sayfa içeriğinde bulunursa teşvik olarak işlenir
-ICERIK_ANAHTAR = [
-    "hibe", "destek", "başvuru", "ödeme", "teşvik",
-    "çağrı", "program", "proje", "yatırım", "finansman",
-]
-
-# Kara liste — anlamsız sayfalar
-KARA_LISTE_URL = [
-    "haber", "basin", "basın", "galeri", "foto", "video",
-    "iletisim", "iletişim", "hakkimizda", "hakkında",
-    "personel", "ihale", "kariyer", "bulunamadi", "bulunamadı", "404",
-]
-
-# ── SİTEMAP TARAYICI ─────────────────────────────────────────────
-
-def sitemap_url_cek(sitemap_url: str) -> list:
-    """Sitemap'ten URL listesi çeker. İç içe sitemap'leri de destekler."""
-    urls = []
-    try:
-        r = requests.get(sitemap_url, headers=HEADERS, timeout=20, verify=False)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.content, "xml")
-        print(f"  🔍 Sitemap içeriği (ilk 200 kar): {r.text[:200]}")
-
-        # İç içe sitemap index
-        for sitemap in soup.find_all("sitemap"):
-            loc = sitemap.find("loc")
-            if loc:
-                alt_urls = sitemap_url_cek(loc.text.strip())
-                urls.extend(alt_urls)
-                time.sleep(1)
-
-        # Normal URL'ler
-        for url_tag in soup.find_all("url"):
-            loc = url_tag.find("loc")
-            if loc:
-                urls.append(loc.text.strip())
-
-    except Exception as e:
-        print(f"  ⚠️  Sitemap hatası ({sitemap_url}): {e}")
-
-    return urls
-
-
-def hibe_url_mu(url: str) -> bool:
-    """URL'nin hibe/destek içerip içermediğini kontrol eder."""
-    url_lower = url.lower()
-
-    # Kara listedeyse atla
-    if any(k in url_lower for k in KARA_LISTE_URL):
-        return False
-
-    # Anahtar kelime içeriyorsa al
-    return any(k in url_lower for k in URL_ANAHTAR)
-
-
-def sayfa_tara(url: str, kurum: str) -> dict | None:
-    """Tek bir sayfayı tarar, teşvik verisi döndürür."""
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=15, verify=False)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "lxml")
-
-        # Başlık çek
-        baslik = None
-        for tag in ["h1", "h2", "title"]:
-            el = soup.find(tag)
-            if el:
-                baslik = el.get_text(strip=True)
-                break
-
-        if not baslik or len(baslik) < 10:
-            return None
-
-        # Sayfa içeriği hibe/destek içeriyor mu?
-        sayfa_metni = soup.get_text(separator=" ", strip=True).lower()
-        if not any(k in sayfa_metni for k in ICERIK_ANAHTAR):
-            return None
-
-        # Tarih çek
-        tarih = _tarih_cek(sayfa_metni)
-
-        # Ürün çek
-        urunler = _urun_cikar(sayfa_metni)
-
-        # Etiket çek
-        etiketler = _etiket_cikar(sayfa_metni, url)
-
-        return {
-            "isim": baslik[:250],
-            "kurum": kurum,
-            "basvuru_url": url,
-            "son_basvuru_tarihi": tarih,
-            "uygun_iller": [],
-            "uygun_urunler": urunler,
-            "etiketler": etiketler,
-        }
-
-    except Exception as e:
-        return None
-
-
-# ── YARDIMCI FONKSİYONLAR ─────────────────────────────────────────
-
-def _tarih_cek(metin: str) -> str | None:
-    """Metinden gelecek tarih çıkarır."""
-    aylar = {
-        "ocak": "01", "şubat": "02", "mart": "03",
-        "nisan": "04", "mayıs": "05", "haziran": "06",
-        "temmuz": "07", "ağustos": "08", "eylül": "09",
-        "ekim": "10", "kasım": "11", "aralık": "12",
-    }
-
-    # DD.MM.YYYY
-    m = re.search(r'\b(\d{1,2})[./](\d{1,2})[./](20\d{2})\b', metin)
-    if m:
-        try:
-            gun, ay, yil = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            tarih = datetime(yil, ay, gun)
-            if tarih > datetime.now():
-                return tarih.strftime("%Y-%m-%d")
-        except:
-            pass
-
-    # DD Ay YYYY
-    for ay_ad, ay_no in aylar.items():
-        m = re.search(rf'\b(\d{{1,2}})\s+{ay_ad}\s+(20\d{{2}})\b', metin)
-        if m:
-            try:
-                gun, yil = int(m.group(1)), int(m.group(2))
-                tarih = datetime(yil, int(ay_no), gun)
-                if tarih > datetime.now():
-                    return tarih.strftime("%Y-%m-%d")
-            except:
-                pass
-
-    # Ay YYYY
-    import calendar
-    for ay_ad, ay_no in aylar.items():
-        m = re.search(rf'\b{ay_ad}\s+(20\d{{2}})\b', metin)
-        if m:
-            try:
-                yil = int(m.group(1))
-                son_gun = calendar.monthrange(yil, int(ay_no))[1]
-                tarih = datetime(yil, int(ay_no), son_gun)
-                if tarih > datetime.now():
-                    return tarih.strftime("%Y-%m-%d")
-            except:
-                pass
-
-    return None
-
-
-def _urun_cikar(metin: str) -> list:
-    urunler = []
-    esleme = {
-        "buğday": "Buğday", "arpa": "Arpa", "mısır": "Mısır",
-        "ayçiçeği": "Ayçiçeği", "pamuk": "Pamuk",
-        "domates": "Domates", "biber": "Biber", "patates": "Patates",
-        "soğan": "Soğan", "şeker pancarı": "Şeker Pancarı",
-        "zeytin": "Zeytin", "fındık": "Fındık", "çay": "Çay",
-        "üzüm": "Üzüm", "kiraz": "Kiraz", "elma": "Elma",
-        "bal": "Süzme Bal", "arıcılık": "Süzme Bal",
-        "büyükbaş": "Büyükbaş (Süt)", "küçükbaş": "Küçükbaş (Koyun)",
-        "süt üretim": "Büyükbaş (Süt)",
-    }
-    for anahtar, urun in esleme.items():
-        if anahtar in metin and urun not in urunler:
-            urunler.append(urun)
-    return urunler[:6]
-
-
-def _etiket_cikar(metin: str, url: str) -> list:
-    etiketler = []
-    if "genç" in metin or "genc" in url: etiketler.append("genç çiftçi")
-    if "kadın" in metin: etiketler.append("kadın çiftçi")
-    if "organik" in metin or "organik" in url: etiketler.append("organik")
-    if "sulama" in metin or "sulama" in url: etiketler.append("sulama")
-    if "makine" in metin or "ekipman" in metin: etiketler.append("makine")
-    if "arıcılık" in metin or "arici" in url: etiketler.append("arıcılık")
-    if "hayvancılık" in metin or "hayvan" in url: etiketler.append("hayvancılık")
-    if "kkydp" in metin or "kkydp" in url: etiketler.append("kkydp")
-    if "ipard" in metin or "ipard" in url: etiketler.append("ipard")
-    if "mazot" in metin or "gübre" in metin: etiketler.append("mazot-gübre")
-    if "kırsal" in metin or "kirsal" in url: etiketler.append("kırsal kalkınma")
-    return etiketler
-
 
 # ── SUPABASE ──────────────────────────────────────────────────────
 
@@ -230,28 +32,27 @@ def supabase_baglan() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def mevcut_urller(db: Client) -> set:
+def mevcut_isimler(db: Client) -> set:
+    """Supabase'deki mevcut teşvik isimlerini döndürür."""
     try:
-        r = db.table("tesvikler").select("basvuru_url").execute()
-        return {row["basvuru_url"] for row in (r.data or []) if row.get("basvuru_url")}
+        r = db.table("tesvikler").select("isim").execute()
+        return {row["isim"].strip() for row in (r.data or []) if row.get("isim")}
     except:
         return set()
 
 
 def kaydet(db: Client, tesvik: dict, mevcut: set) -> bool:
-    url = tesvik.get("basvuru_url", "")
+    """Teşviki Supabase'e ekler, zaten varsa atlar."""
     isim = tesvik.get("isim", "").strip()
-
-    if not isim or len(isim) < 15:
+    if not isim or len(isim) < 10:
         return False
-    if url in mevcut:
+    if isim in mevcut:
         return False
-
     try:
         db.table("tesvikler").insert({
             "isim": isim,
             "kurum": tesvik.get("kurum", ""),
-            "basvuru_url": url,
+            "basvuru_url": tesvik.get("basvuru_url"),
             "son_basvuru_tarihi": tesvik.get("son_basvuru_tarihi"),
             "uygun_iller": tesvik.get("uygun_iller", []),
             "uygun_urunler": tesvik.get("uygun_urunler", []),
@@ -261,11 +62,26 @@ def kaydet(db: Client, tesvik: dict, mevcut: set) -> bool:
         }).execute()
         return True
     except Exception as e:
-        print(f"  ⚠️  Kayıt hatası: {e}")
+        print(f"  ⚠️  Kayıt hatası ({isim[:40]}): {e}")
+        return False
+
+
+def guncelle(db: Client, tesvik: dict) -> bool:
+    """Mevcut teşvikin tarih ve aktiflik bilgisini günceller."""
+    isim = tesvik.get("isim", "").strip()
+    try:
+        db.table("tesvikler").update({
+            "son_basvuru_tarihi": tesvik.get("son_basvuru_tarihi"),
+            "aktif": True,
+            "guncelleme": datetime.now().isoformat(),
+        }).eq("isim", isim).execute()
+        return True
+    except:
         return False
 
 
 def suresi_gecenleri_pasife_al(db: Client):
+    """Son başvuru tarihi geçmiş teşvikleri pasife alır."""
     bugun = datetime.now().strftime("%Y-%m-%d")
     try:
         db.table("tesvikler").update({"aktif": False})\
@@ -274,78 +90,293 @@ def suresi_gecenleri_pasife_al(db: Client):
             .execute()
         print("🧹 Süresi geçenler pasife alındı.")
     except Exception as e:
-        print(f"  ⚠️  Temizleme: {e}")
+        print(f"  ⚠️  Temizleme hatası: {e}")
 
 
-# ── KAYNAKLAR ─────────────────────────────────────────────────────
+# ── TARİH PARSER ─────────────────────────────────────────────────
 
-KAYNAKLAR = [
-    {
-    "kurum": "TKDK (IPARD)",
-    "sitemap": None,
-    "sayfalar": [
-        "https://www.tkdk.gov.tr/Hibe/Index",
-        "https://www.tkdk.gov.tr/Program/Index",
-        "https://www.tkdk.gov.tr/Duyuru/Index",
-    ],
-    "max_sayfa": 10,
-},
-    {
-        "kurum": "KOSGEB",
-        "sitemap": None,
-        "sayfalar": [
-            "https://www.kosgeb.gov.tr/site/tr/genel/destekler",
-        ],
-        "max_sayfa": 20,
-    },
+def tarih_parse(metin: str) -> str | None:
+    """
+    'Sürekli Aktif', '31.12.2026', '05.09.2027' gibi
+    metinleri YYYY-MM-DD formatına çevirir.
+    """
+    if not metin or "sürekli" in metin.lower():
+        return None
+
+    # DD.MM.YYYY
+    m = re.search(r'(\d{1,2})\.(\d{1,2})\.(20\d{2})', metin)
+    if m:
+        try:
+            gun, ay, yil = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            return datetime(yil, ay, gun).strftime("%Y-%m-%d")
+        except:
+            pass
+    return None
+
+
+# ── ÜRÜN / ETİKET EŞLEŞTİRME ─────────────────────────────────────
+
+URUN_ESLEME = {
+    "hayvancılık": ["Büyükbaş (Süt)", "Büyükbaş (Et)", "Küçükbaş (Koyun)", "Küçükbaş (Keçi)"],
+    "büyükbaş": ["Büyükbaş (Süt)", "Büyükbaş (Et)"],
+    "küçükbaş": ["Küçükbaş (Koyun)", "Küçükbaş (Keçi)"],
+    "besiçilik": ["Büyükbaş (Et)"],
+    "arıcılık": ["Süzme Bal", "Petek Bal", "Ana Arı", "Polen", "Propolis", "Arı Sütü"],
+    "bal": ["Süzme Bal", "Petek Bal"],
+    "organik": ["Organik Tahıl", "Organik Sebze", "Organik Meyve", "Organik Bal", "Organik Süt Ürünleri"],
+    "fındık": ["Fındık"],
+    "zeytin": ["Zeytin"],
+    "tohum": ["Buğday", "Arpa", "Mısır", "Ayçiçeği"],
+    "mazot": ["Buğday", "Arpa", "Mısır", "Ayçiçeği", "Pamuk", "Domates", "Patates", "Zeytin", "Fındık"],
+    "gübre": ["Buğday", "Arpa", "Mısır", "Ayçiçeği", "Pamuk", "Domates", "Patates", "Zeytin", "Fındık"],
+    "su ürünleri": ["Su Ürünleri"],
+    "tarım havzaları": ["Buğday", "Arpa", "Mısır", "Ayçiçeği", "Pamuk", "Domates"],
+    "gıda": ["Organik Tahıl", "Organik Sebze", "Organik Meyve"],
+}
+
+ETIKET_ESLEME = {
+    "hayvancılık": "hayvancılık",
+    "büyükbaş": "hayvancılık",
+    "küçükbaş": "hayvancılık",
+    "besiçilik": "hayvancılık",
+    "arıcılık": "arıcılık",
+    "organik": "organik",
+    "fındık": "bitkisel",
+    "zeytin": "bitkisel",
+    "tohum": "bitkisel",
+    "mazot": "mazot-gübre",
+    "gübre": "mazot-gübre",
+    "su ürünleri": "su ürünleri",
+    "kredi": "kredi",
+    "sigorta": "sigorta",
+    "ağaçlandırma": "ağaçlandırma",
+    "kira": "depolama",
+    "çatak": "çevre",
+    "kobi": "KOBİ",
+    "gıda": "gıda",
+}
+
+
+def urun_ve_etiket_cikar(isim: str) -> tuple[list, list]:
+    """Teşvik isminden ürün ve etiket listesi çıkarır."""
+    isim_lower = isim.lower()
+    urunler = []
+    etiketler = ["tarım"]
+
+    for anahtar, urun_listesi in URUN_ESLEME.items():
+        if anahtar in isim_lower:
+            for u in urun_listesi:
+                if u not in urunler:
+                    urunler.append(u)
+
+    for anahtar, etiket in ETIKET_ESLEME.items():
+        if anahtar in isim_lower and etiket not in etiketler:
+            etiketler.append(etiket)
+
+    return urunler[:8], etiketler
+
+
+# ── YATIRIMADEStek.GOV.TR PARSER ─────────────────────────────────
+
+def yatirimadestek_tara(db: Client, mevcut: set) -> int:
+    """
+    yatirimadestek.gov.tr'den Tarım Bakanlığı desteklerini çeker.
+    Düz HTML, JavaScript yok — requests ile düzgün çalışır.
+    """
+    url = (
+        "https://www.yatirimadestek.gov.tr/gelismis-arama"
+        "?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1"
+    )
+    print(f"\n🏛️  Tarım ve Orman Bakanlığı (yatirimadestek.gov.tr)")
+
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=20, verify=False)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"  ⚠️  Bağlantı hatası: {e}")
+        return 0
+
+    soup = BeautifulSoup(r.text, "lxml")
+    eklenen = 0
+
+    # Her destek kartını bul
+    # Sayfada "TARIM VE ORMAN BAKANLIĞI" başlıklı kartlar var
+    kartlar = soup.find_all("div", class_=lambda c: c and "col" in c)
+
+    # Alternatif: tüm metni satır satır parse et
+    # Sayfa yapısı: isim, aktiflik, son başvuru tarihi sırayla geliyor
+    metin_bloklari = []
+    for tag in soup.find_all(["h5", "h4", "h3", "a", "span", "div"]):
+        metin = tag.get_text(strip=True)
+        if len(metin) > 15 and "TARIM VE ORMAN" not in metin and "AKTİF" not in metin:
+            if any(k in metin.lower() for k in [
+                "destek", "kredi", "hibe", "tarım", "hayvan",
+                "arıcılık", "organik", "fındık", "zeytin", "gübre",
+                "mazot", "sigorta", "ağaçlandırma", "besiçilik"
+            ]):
+                metin_bloklari.append(metin)
+
+    # Son başvuru tarihlerini ayrı çek
+    tarih_pattern = re.compile(r'Son Başvuru Tarihi\s*:\s*([^\n]+)', re.IGNORECASE)
+    tum_metin = soup.get_text(separator="\n")
+    tarihler = tarih_pattern.findall(tum_metin)
+    tarih_iter = iter(tarihler)
+
+    # İsim + tarih eşleştir
+    islenen = set()
+    for isim in metin_bloklari:
+        isim = isim.strip()[:250]
+        if isim in islenen or len(isim) < 15:
+            continue
+        islenen.add(isim)
+
+        # Sıradaki tarihi al
+        try:
+            tarih_metin = next(tarih_iter).strip()
+        except StopIteration:
+            tarih_metin = ""
+
+        son_tarih = tarih_parse(tarih_metin)
+        urunler, etiketler = urun_ve_etiket_cikar(isim)
+
+        tesvik = {
+            "isim": isim,
+            "kurum": "Tarım ve Orman Bakanlığı",
+            "basvuru_url": "https://www.yatirimadestek.gov.tr/gelismis-arama?ajans_id=TARIM+VE+ORMAN+BAKANLI%C4%9EI&il_id=0&status=1",
+            "son_basvuru_tarihi": son_tarih,
+            "uygun_iller": [],
+            "uygun_urunler": urunler,
+            "etiketler": etiketler,
+        }
+
+        if isim in mevcut:
+            guncelle(db, tesvik)
+            print(f"  🔄 Güncellendi: {isim[:60]}")
+        elif kaydet(db, tesvik, mevcut):
+            eklenen += 1
+            mevcut.add(isim)
+            print(f"  ➕ Eklendi: {isim[:60]}")
+
+    return eklenen
+
+
+# ── KOSGEB PARSER ─────────────────────────────────────────────────
+
+KOSGEB_KARA_LISTE = [
+    "haber", "basın", "iletişim", "hakkında", "kariyer",
+    "ihale", "personel", "404", "bulunamadı", "galeri",
 ]
+
+KOSGEB_ANAHTAR = [
+    "destek", "hibe", "program", "teşvik", "kredi", "finansman"
+]
+
+
+def kosgeb_tara(db: Client, mevcut: set) -> int:
+    """KOSGEB destekler sayfasını tarar."""
+    print(f"\n🏛️  KOSGEB")
+    ana_url = "https://www.kosgeb.gov.tr/site/tr/genel/destekler"
+    eklenen = 0
+
+    try:
+        r = requests.get(ana_url, headers=HEADERS, timeout=20, verify=False)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "lxml")
+    except Exception as e:
+        print(f"  ⚠️  Bağlantı hatası: {e}")
+        return 0
+
+    # Sayfa içindeki linkleri topla
+    linkler = set()
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not href.startswith("http"):
+            href = "https://www.kosgeb.gov.tr" + href
+        url_lower = href.lower()
+        if any(k in url_lower for k in KOSGEB_KARA_LISTE):
+            continue
+        if any(k in url_lower for k in ["destek", "program", "hibe", "kredi"]):
+            linkler.add(href)
+
+    print(f"  {len(linkler)} link bulundu")
+
+    for link in list(linkler)[:15]:
+        try:
+            pr = requests.get(link, headers=HEADERS, timeout=15, verify=False)
+            pr.raise_for_status()
+            psoup = BeautifulSoup(pr.text, "lxml")
+
+            # Başlık çek
+            baslik = None
+            for tag in ["h1", "h2"]:
+                el = psoup.find(tag)
+                if el:
+                    baslik = el.get_text(strip=True)
+                    break
+
+            if not baslik or len(baslik) < 10:
+                continue
+
+            sayfa_metin = psoup.get_text(separator=" ", strip=True).lower()
+            if not any(k in sayfa_metin for k in KOSGEB_ANAHTAR):
+                continue
+
+            son_tarih = None
+            tarih_m = re.search(r'(\d{1,2})\.(\d{1,2})\.(20\d{2})', sayfa_metin)
+            if tarih_m:
+                try:
+                    gun = int(tarih_m.group(1))
+                    ay = int(tarih_m.group(2))
+                    yil = int(tarih_m.group(3))
+                    dt = datetime(yil, ay, gun)
+                    if dt > datetime.now():
+                        son_tarih = dt.strftime("%Y-%m-%d")
+                except:
+                    pass
+
+            urunler, etiketler = urun_ve_etiket_cikar(baslik)
+            if "KOBİ" not in etiketler:
+                etiketler.append("KOBİ")
+
+            tesvik = {
+                "isim": baslik[:250],
+                "kurum": "KOSGEB",
+                "basvuru_url": link,
+                "son_basvuru_tarihi": son_tarih,
+                "uygun_iller": [],
+                "uygun_urunler": urunler,
+                "etiketler": etiketler,
+            }
+
+            if baslik in mevcut:
+                guncelle(db, tesvik)
+            elif kaydet(db, tesvik, mevcut):
+                eklenen += 1
+                mevcut.add(baslik)
+                print(f"  ➕ Eklendi: {baslik[:60]}")
+
+            time.sleep(1)
+
+        except Exception:
+            continue
+
+    return eklenen
 
 
 # ── MAIN ──────────────────────────────────────────────────────────
 
 def main():
     print("=" * 55)
-    print(f"🌾 Teşvik Avcısı Bot v3 — {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    print(f"🌾 Teşvik Avcısı Bot v4 — {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print("=" * 55)
 
     db = supabase_baglan()
-    mevcut = mevcut_urller(db)
-    print(f"📊 Mevcut teşvik: {len(mevcut)}\n")
+    mevcut = mevcut_isimler(db)
+    print(f"📊 Mevcut teşvik sayısı: {len(mevcut)}")
 
     toplam = 0
-
-    for kaynak in KAYNAKLAR:
-        kurum = kaynak["kurum"]
-        print(f"\n🏛️  {kurum}")
-
-        # Sitemap varsa sitemap'ten URL çek
-        if kaynak.get("sitemap"):
-            print(f"   📄 Sitemap taranıyor...")
-            tum_urller = sitemap_url_cek(kaynak["sitemap"])
-            print(f"   {len(tum_urller)} URL bulundu")
-
-            # Hibe/destek URL'lerini filtrele
-            hibe_urller = [u for u in tum_urller if hibe_url_mu(u)]
-            print(f"   {len(hibe_urller)} hibe/destek URL'si seçildi")
-
-            # Max sayfa sınırı
-            hibe_urller = hibe_urller[:kaynak.get("max_sayfa", 30)]
-
-        else:
-            hibe_urller = kaynak.get("sayfalar", [])
-
-        # Her URL'yi tara
-        for url in hibe_urller:
-            if url in mevcut:
-                continue
-
-            tesvik = sayfa_tara(url, kurum)
-            if tesvik and kaydet(db, tesvik, mevcut):
-                toplam += 1
-                mevcut.add(url)
-                print(f"   ➕ {tesvik['isim'][:60]}")
-
-            time.sleep(1)  # Siteye saygılı ol
+    toplam += yatirimadestek_tara(db, mevcut)
+    toplam += kosgeb_tara(db, mevcut)
 
     suresi_gecenleri_pasife_al(db)
 

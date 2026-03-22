@@ -1,5 +1,6 @@
 // lib/services/gemini_servisi.dart
 
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../core/constants/app_constants.dart';
@@ -23,11 +24,8 @@ class GeminiServisi {
     String? dosyaAdi,
   }) async {
     final bugun = DateTime.now().toString().split(' ')[0];
-
-    // Dosya tipini belirle
     final mimeType = _mimeTypeBelirle(gorselBytes, dosyaAdi ?? '');
 
-    // Profil metni
     final profilMetni = profil != null
         ? '''
 ÇİFTÇİ PROFİLİ (sistemde kayıtlı):
@@ -45,7 +43,7 @@ ${profil.hayvanSayisi != null ? '- Hayvan: ${profil.hayvanSayisi} adet' : ''}
         : tesvikler.map((t) => t.promptSatiri()).join('\n');
 
     final promptStr = '''
-    ÖNEMLİ GİZLİLİK TALİMATI: Bu belgede TC Kimlik No, ad-soyad, adres gibi kişisel veriler olabilir. Bu verileri ASLA kaydetme, tekrar etme veya analiz sonucuna dahil etme. Sadece tarımsal verileri (arazi büyüklüğü, ürün türü, il) çıkar.
+ÖNEMLİ GİZLİLİK TALİMATI: Bu belgede TC Kimlik No, ad-soyad, adres gibi kişisel veriler olabilir. Bu verileri ASLA kaydetme, tekrar etme veya analiz sonucuna dahil etme. Sadece tarımsal verileri (arazi büyüklüğü, ürün türü, il) çıkar.
 Bugünün tarihi: $bugun. Sen profesyonel bir tarım danışmanısın.
 
 $profilMetni
@@ -60,6 +58,11 @@ Yüklenen belgeyi (${dosyaAdi ?? 'belge'}) incele ve şunları yap:
 
 SİSTEMDEKİ TEŞVİKLER:
 $tesvikMetni
+
+---
+Analizin en sonuna, belgeden çıkardığın tarımsal verileri TEK SATIR JSON olarak ekle:
+PROFIL_JSON:{"il":"<sadece Türkiye il adı — örn: Ankara/Polatlı yazıyorsa sadece Ankara yaz>","uretici_tipleri":["ciftci","arici","hayvancilik","organik" değerlerinden uygun olanlar],"urunler":["<bulunan ürünler>"],"dekar":<sayı veya null>,"kovan_sayisi":<sayı veya null>,"hayvan_sayisi":<sayı veya null>}
+Kural: uretici_tipleri boş olmasın, en az biri olsun. Belgede bilgi yoksa null yaz.
 ''';
 
     try {
@@ -71,44 +74,47 @@ $tesvikMetni
       ]);
 
       final metin = response.text ?? 'Analiz sonucu alınamadı.';
+      final cikarilanProfil = _profilJsonCikar(metin);
 
       return AnalizSonucu(
         metin: metin,
         kritikUyariVar: metin.contains('KRITIK_UYARI'),
         analizZamani: DateTime.now(),
+        cikarilanProfil: cikarilanProfil,
       );
     } on GenerativeAIException catch (e) {
       if (e.message.contains('429') || e.message.contains('quota')) {
-        throw Exception(
-            'Günlük AI analiz limiti doldu. Lütfen birkaç dakika bekleyin.');
+        throw Exception('Günlük AI analiz limiti doldu. Lütfen birkaç dakika bekleyin.');
       }
       throw Exception('AI hatası: ${e.message}');
     }
   }
 
+  /// Gemini çıktısından PROFIL_JSON satırını parse eder
+  Map<String, dynamic>? _profilJsonCikar(String metin) {
+    final regex = RegExp(r'PROFIL_JSON:(\{[^\n]+\})');
+    final match = regex.firstMatch(metin);
+    if (match == null) return null;
+    try {
+      return jsonDecode(match.group(1)!) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Dosya içeriğine ve adına göre MIME type belirle
   String _mimeTypeBelirle(Uint8List bytes, String dosyaAdi) {
-    // PDF sihirli baytları: %PDF
     if (bytes.length > 4 &&
-        bytes[0] == 0x25 &&
-        bytes[1] == 0x50 &&
-        bytes[2] == 0x44 &&
-        bytes[3] == 0x46) {
+        bytes[0] == 0x25 && bytes[1] == 0x50 &&
+        bytes[2] == 0x44 && bytes[3] == 0x46) {
       return 'application/pdf';
     }
-    // PNG
-    if (bytes.length > 4 &&
-        bytes[0] == 0x89 &&
-        bytes[1] == 0x50) {
+    if (bytes.length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50) {
       return 'image/png';
     }
-    // JPEG
-    if (bytes.length > 2 &&
-        bytes[0] == 0xFF &&
-        bytes[1] == 0xD8) {
+    if (bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
       return 'image/jpeg';
     }
-    // Uzantıya göre
     final uzanti = dosyaAdi.split('.').last.toLowerCase();
     switch (uzanti) {
       case 'pdf': return 'application/pdf';

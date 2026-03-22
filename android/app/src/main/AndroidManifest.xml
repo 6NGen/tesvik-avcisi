@@ -24,6 +24,9 @@
         android:label="Teşvik Avcısı"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+    android:name="com.google.android.gms.ads.APPLICATION_ID"
+    android:value="ca-app-pub-3219214594050063~6762008257"/>
 
         <activity
             android:name=".MainActivity"

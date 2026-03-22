@@ -1,5 +1,4 @@
 // lib/screens/home/home_screen.dart
-// Eşleşme motoru entegre: il + ürün + tip + miktar filtrelemesi
 
 import '../tesvik/tesvik_detay_ekrani.dart';
 import 'package:flutter/material.dart';
@@ -22,42 +21,43 @@ final tesviklerProvider = StreamProvider<List<TesvikModel>>((ref) {
   return SupabaseServisi().tesviklerStream();
 });
 
+/// Session boyunca gizlenen süresi dolmuş teşvik ID'leri
+final gizlenenTesviklerProvider =
+    StateProvider<Set<String>>((ref) => {});
+
 const String cksEdevletUrl =
     'https://www.turkiye.gov.tr/tarim-ve-orman-bakanligi-ciftci-kayit-sistemi';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
-  // Profil varsa eşleşme motoru, yoksa tüm liste
-  
   List<TesvikModel> _filtrele(
-    List<TesvikModel> hepsi, ProfilModel? profil) {
-  List<TesvikModel> liste;
+      List<TesvikModel> hepsi, ProfilModel? profil, Set<String> gizlenenler) {
+    List<TesvikModel> liste;
+    if (profil == null) {
+      liste = List<TesvikModel>.from(hepsi);
+    } else {
+      final sonuclar =
+          EslesmeServisi.eslestir(tesvikler: hepsi, profil: profil);
+      liste = sonuclar.map((s) => s.tesvik).toList();
+    }
 
-  if (profil == null) {
-    liste = List<TesvikModel>.from(hepsi);
-  } else {
-    final sonuclar = EslesmeServisi.eslestir(
-      tesvikler: hepsi,
-      profil: profil,
-    );
-    liste = sonuclar.map((s) => s.tesvik).toList();
+    // Gizlenenleri çıkar
+    liste = liste.where((t) => !gizlenenler.contains(t.id)).toList();
+
+    liste.sort((a, b) {
+      if (a.sonBasvuruTarihi == null) return 1;
+      if (b.sonBasvuruTarihi == null) return -1;
+      return a.sonBasvuruTarihi!.compareTo(b.sonBasvuruTarihi!);
+    });
+    return liste;
   }
-
-  // Tarihe göre sırala: yaklaşan önce, tarihi olmayanlar sona
-  liste.sort((a, b) {
-    if (a.sonBasvuruTarihi == null) return 1;
-    if (b.sonBasvuruTarihi == null) return -1;
-    return a.sonBasvuruTarihi!.compareTo(b.sonBasvuruTarihi!);
-  });
-
-  return liste;
-}
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tesviklerAsync = ref.watch(tesviklerProvider);
     final profil = ref.watch(profilProvider).profil;
+    final gizlenenler = ref.watch(gizlenenTesviklerProvider);
     final user = Supabase.instance.client.auth.currentUser;
     final girisYapildi = user != null;
     final adSoyad = user?.userMetadata?['full_name'] ??
@@ -76,26 +76,20 @@ class HomeScreen extends ConsumerWidget {
             actions: [
               if (girisYapildi) ...[
                 IconButton(
-                  icon: const Icon(Icons.history_rounded,
-                      color: Colors.white),
+                  icon: const Icon(Icons.history_rounded, color: Colors.white),
                   onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(
-                          builder: (_) => const TakipEkrani())),
+                      MaterialPageRoute(builder: (_) => const TakipEkrani())),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.settings_rounded,
-                      color: Colors.white),
+                  icon: const Icon(Icons.settings_rounded, color: Colors.white),
                   onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(
-                          builder: (_) => const AyarlarEkrani())),
+                      MaterialPageRoute(builder: (_) => const AyarlarEkrani())),
                 ),
               ] else
                 IconButton(
-                  icon: const Icon(Icons.login_rounded,
-                      color: Colors.white),
+                  icon: const Icon(Icons.login_rounded, color: Colors.white),
                   onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(
-                          builder: (_) => const AuthEkrani())),
+                      MaterialPageRoute(builder: (_) => const AuthEkrani())),
                 ),
             ],
             flexibleSpace: FlexibleSpaceBar(
@@ -109,58 +103,48 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 child: SafeArea(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Row(
                           children: [
-                            Text(
-                              profil?.tipEmojileri ?? '🌾',
-                              style: const TextStyle(fontSize: 26),
-                            ),
+                            Text(profil?.tipEmojileri ?? '🌾',
+                                style: const TextStyle(fontSize: 26)),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    girisYapildi
-                                        ? 'Hoş geldin!'
-                                        : 'Teşvik Avcısı',
+                                    girisYapildi ? 'Hoş geldin!' : 'Teşvik Avcısı',
                                     style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 12),
+                                        color: Colors.white70, fontSize: 12),
                                   ),
                                   Text(
                                     girisYapildi
                                         ? adSoyad
                                         : 'Türkiye\'nin hibe asistanı',
                                     style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800),
                                   ),
                                 ],
                               ),
                             ),
-                            if (profil != null)
-                              _IlRozeti(il: profil.il),
+                            if (profil != null) _IlRozeti(il: profil.il),
                           ],
                         ),
                         const SizedBox(height: 14),
                         tesviklerAsync.when(
                           data: (t) {
-                            final f = _filtrele(t, profil);
+                            final f = _filtrele(t, profil, gizlenenler);
                             return _IstatistikSatiri(
                               uygunSayisi: f.length,
-                              kritikSayisi: f
-                                  .where((x) => x.kritikTarihMi)
-                                  .length,
+                              kritikSayisi:
+                                  f.where((x) => x.kritikTarihMi).length,
                               toplamSayisi: t.length,
                             );
                           },
@@ -179,8 +163,7 @@ class HomeScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _MisafirBanner(
                 onGirisYap: () => Navigator.push(context,
-                    MaterialPageRoute(
-                        builder: (_) => const AuthEkrani())),
+                    MaterialPageRoute(builder: (_) => const AuthEkrani())),
               ),
             ),
 
@@ -204,19 +187,16 @@ class HomeScreen extends ConsumerWidget {
               child: Row(
                 children: [
                   Text(
-                    profil != null
-                        ? 'Sana Uygun Teşvikler'
-                        : 'Aktif Teşvikler',
+                    profil != null ? 'Sana Uygun Teşvikler' : 'Aktif Teşvikler',
                     style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.koyu,
-                    ),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.koyu),
                   ),
                   const Spacer(),
                   tesviklerAsync.when(
                     data: (t) => _SayacRozeti(
-                        sayi: _filtrele(t, profil).length),
+                        sayi: _filtrele(t, profil, gizlenenler).length),
                     loading: () => const SizedBox(),
                     error: (_, __) => const SizedBox(),
                   ),
@@ -227,27 +207,36 @@ class HomeScreen extends ConsumerWidget {
 
           tesviklerAsync.when(
             loading: () => const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            ),
+                child: Center(child: CircularProgressIndicator())),
             error: (e, _) => SliverFillRemaining(
               child: Center(
                   child: Text('Hata: $e',
-                      style:
-                          const TextStyle(color: AppTheme.gri))),
+                      style: const TextStyle(color: AppTheme.gri))),
             ),
             data: (tesvikler) {
-              final filtreli = _filtrele(tesvikler, profil);
+              final filtreli = _filtrele(tesvikler, profil, gizlenenler);
               if (filtreli.isEmpty) {
                 return SliverFillRemaining(
                     child: _BosGorunum(profil: profil));
               }
               return SliverPadding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, i) => _TesvikKarti(
-                        tesvik: filtreli[i], index: i),
+                      tesvik: filtreli[i],
+                      index: i,
+                      onGizle: filtreli[i].sonBasvuruTarihi != null &&
+                              filtreli[i]
+                                  .sonBasvuruTarihi!
+                                  .isBefore(DateTime.now())
+                          ? () {
+                              ref
+                                  .read(gizlenenTesviklerProvider.notifier)
+                                  .update((s) => {...s, filtreli[i].id});
+                            }
+                          : null,
+                    ),
                     childCount: filtreli.length,
                   ),
                 ),
@@ -257,8 +246,8 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const OcrScreen())),
+        onPressed: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const OcrScreen())),
         backgroundColor: AppTheme.bugdayAltini,
         foregroundColor: AppTheme.koyu,
         icon: const Icon(Icons.document_scanner_rounded),
@@ -282,8 +271,7 @@ class _MisafirBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.altinAcik,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: AppTheme.bugdayAltini.withOpacity(0.5)),
+        border: Border.all(color: AppTheme.bugdayAltini.withOpacity(0.5)),
       ),
       child: Row(
         children: [
@@ -299,17 +287,15 @@ class _MisafirBanner extends StatelessWidget {
                         fontSize: 13,
                         color: AppTheme.toprakKahve)),
                 Text('Sana özel hibeler ve başvuru takibi için.',
-                    style: TextStyle(
-                        fontSize: 11, color: AppTheme.gri)),
+                    style: TextStyle(fontSize: 11, color: AppTheme.gri)),
               ],
             ),
           ),
           TextButton(
             onPressed: onGirisYap,
             style: TextButton.styleFrom(
-              foregroundColor: AppTheme.ormanYesili,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
+                foregroundColor: AppTheme.ormanYesili,
+                padding: const EdgeInsets.symmetric(horizontal: 8)),
             child: const Text('Giriş Yap →',
                 style: TextStyle(fontWeight: FontWeight.w700)),
           ),
@@ -334,13 +320,12 @@ class _CksKartiState extends State<_CksKarti> {
       decoration: BoxDecoration(
         color: AppTheme.kremBeyaz,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: AppTheme.bugdayAltini.withOpacity(0.4)),
+        border: Border.all(color: AppTheme.bugdayAltini.withOpacity(0.4)),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withOpacity(0.04),
               blurRadius: 8,
-              offset: const Offset(0, 2)),
+              offset: const Offset(0, 2))
         ],
       ),
       child: Padding(
@@ -356,8 +341,7 @@ class _CksKartiState extends State<_CksKarti> {
                       color: AppTheme.altinAcik,
                       borderRadius: BorderRadius.circular(10)),
                   child: const Center(
-                      child: Text('💡',
-                          style: TextStyle(fontSize: 20))),
+                      child: Text('💡', style: TextStyle(fontSize: 20))),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -371,8 +355,7 @@ class _CksKartiState extends State<_CksKarti> {
                               color: AppTheme.koyu)),
                       Text(
                           'ÇKS belgenle analiz yaptırırsan sonuçlar çok daha doğru olur.',
-                          style: TextStyle(
-                              fontSize: 12, color: AppTheme.gri)),
+                          style: TextStyle(fontSize: 12, color: AppTheme.gri)),
                     ],
                   ),
                 ),
@@ -395,14 +378,12 @@ class _CksKartiState extends State<_CksKarti> {
                             mode: LaunchMode.externalApplication);
                       }
                     },
-                    icon: const Text('🏛️',
-                        style: TextStyle(fontSize: 14)),
+                    icon: const Text('🏛️', style: TextStyle(fontSize: 14)),
                     label: const Text('e-Devlet\'ten Al',
                         style: TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.ormanYesili,
-                      side: const BorderSide(
-                          color: AppTheme.acikYesil),
+                      side: const BorderSide(color: AppTheme.acikYesil),
                       minimumSize: const Size(0, 40),
                     ),
                   ),
@@ -411,8 +392,7 @@ class _CksKartiState extends State<_CksKarti> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () => Navigator.push(context,
-                        MaterialPageRoute(
-                            builder: (_) => const OcrScreen())),
+                        MaterialPageRoute(builder: (_) => const OcrScreen())),
                     icon: const Icon(Icons.upload_rounded, size: 16),
                     label: const Text('Belge Yükle',
                         style: TextStyle(fontSize: 12)),
@@ -442,8 +422,8 @@ class _HizliIslemler extends StatelessWidget {
             emoji: '🔍',
             etiket: 'Belge\nAnaliz',
             renk: AppTheme.ormanYesili,
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const OcrScreen())),
+            onTap: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const OcrScreen())),
           ),
         ),
         const SizedBox(width: 10),
@@ -454,8 +434,7 @@ class _HizliIslemler extends StatelessWidget {
               etiket: 'Başvuru\nTakibi',
               renk: AppTheme.ortaYesil,
               onTap: () => Navigator.push(context,
-                  MaterialPageRoute(
-                      builder: (_) => const TakipEkrani())),
+                  MaterialPageRoute(builder: (_) => const TakipEkrani())),
             ),
           ),
           const SizedBox(width: 10),
@@ -468,8 +447,7 @@ class _HizliIslemler extends StatelessWidget {
             onTap: () async {
               final uri = Uri.parse(cksEdevletUrl);
               if (await canLaunchUrl(uri)) {
-                await launchUrl(uri,
-                    mode: LaunchMode.externalApplication);
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
               }
             },
           ),
@@ -485,12 +463,11 @@ class _HizliButon extends StatelessWidget {
   final Color renk;
   final VoidCallback onTap;
 
-  const _HizliButon({
-    required this.emoji,
-    required this.etiket,
-    required this.renk,
-    required this.onTap,
-  });
+  const _HizliButon(
+      {required this.emoji,
+      required this.etiket,
+      required this.renk,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -505,7 +482,7 @@ class _HizliButon extends StatelessWidget {
             BoxShadow(
                 color: renk.withOpacity(0.3),
                 blurRadius: 8,
-                offset: const Offset(0, 3)),
+                offset: const Offset(0, 3))
           ],
         ),
         child: Column(
@@ -553,11 +530,10 @@ class _IstatistikSatiri extends StatelessWidget {
   final int kritikSayisi;
   final int toplamSayisi;
 
-  const _IstatistikSatiri({
-    required this.uygunSayisi,
-    required this.kritikSayisi,
-    required this.toplamSayisi,
-  });
+  const _IstatistikSatiri(
+      {required this.uygunSayisi,
+      required this.kritikSayisi,
+      required this.toplamSayisi});
 
   @override
   Widget build(BuildContext context) {
@@ -583,12 +559,11 @@ class _IstatCard extends StatelessWidget {
   final String ikon;
   final bool vurgulu;
 
-  const _IstatCard({
-    required this.deger,
-    required this.etiket,
-    required this.ikon,
-    this.vurgulu = false,
-  });
+  const _IstatCard(
+      {required this.deger,
+      required this.etiket,
+      required this.ikon,
+      this.vurgulu = false});
 
   @override
   Widget build(BuildContext context) {
@@ -611,14 +586,11 @@ class _IstatCard extends StatelessWidget {
             children: [
               Text(deger,
                   style: TextStyle(
-                      color: vurgulu
-                          ? AppTheme.bugdayAltini
-                          : Colors.white,
+                      color: vurgulu ? AppTheme.bugdayAltini : Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.w900)),
               Text(etiket,
-                  style: const TextStyle(
-                      color: Colors.white70, fontSize: 9)),
+                  style: const TextStyle(color: Colors.white70, fontSize: 9)),
             ],
           ),
         ],
@@ -636,9 +608,8 @@ class _SayacRozeti extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.yaprakAcik,
-        borderRadius: BorderRadius.circular(20),
-      ),
+          color: AppTheme.yaprakAcik,
+          borderRadius: BorderRadius.circular(20)),
       child: Text('$sayi teşvik',
           style: const TextStyle(
               color: AppTheme.ormanYesili,
@@ -675,8 +646,10 @@ class _BosGorunum extends StatelessWidget {
 class _TesvikKarti extends StatelessWidget {
   final TesvikModel tesvik;
   final int index;
+  final VoidCallback? onGizle; // null ise swipe devre dışı
 
-  const _TesvikKarti({required this.tesvik, required this.index});
+  const _TesvikKarti(
+      {required this.tesvik, required this.index, this.onGizle});
 
   _UyariDurumu _uyariDurumu() {
     if (tesvik.sonBasvuruTarihi == null) return _UyariDurumu.yok;
@@ -695,15 +668,14 @@ class _TesvikKarti extends StatelessWidget {
     final kalan =
         tesvik.sonBasvuruTarihi?.difference(DateTime.now()).inDays;
 
-    return TweenAnimationBuilder<double>(
+    final kart = TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 300 + index * 80),
       curve: Curves.easeOut,
       builder: (context, v, child) => Opacity(
-        opacity: v,
-        child: Transform.translate(
-            offset: Offset(0, 20 * (1 - v)), child: child),
-      ),
+          opacity: v,
+          child: Transform.translate(
+              offset: Offset(0, 20 * (1 - v)), child: child)),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
@@ -720,11 +692,9 @@ class _TesvikKarti extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-          builder: (_) => TesvikDetayEkrani(tesvik: tesvik),
-          ),
-           ),
+              context,
+              MaterialPageRoute(
+                  builder: (_) => TesvikDetayEkrani(tesvik: tesvik))),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -796,6 +766,38 @@ class _TesvikKarti extends StatelessWidget {
         ),
       ),
     );
+
+    // Sadece süresi dolmuş kartlara swipe ekle
+    if (onGizle == null) return kart;
+
+    return Dismissible(
+      key: Key(tesvik.id),
+      direction: DismissDirection.horizontal,
+      onDismissed: (_) => onGizle!(),
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: const Icon(Icons.delete_outline_rounded,
+            color: Colors.white, size: 28),
+      ),
+      secondaryBackground: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: const Icon(Icons.delete_outline_rounded,
+            color: Colors.white, size: 28),
+      ),
+      child: kart,
+    );
   }
 }
 
@@ -856,23 +858,18 @@ class _Etiket extends StatelessWidget {
   final Color renk;
   final Color textRenk;
 
-  const _Etiket({
-    required this.metin,
-    required this.renk,
-    required this.textRenk,
-  });
+  const _Etiket(
+      {required this.metin, required this.renk, required this.textRenk});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-          color: renk, borderRadius: BorderRadius.circular(6)),
+      decoration:
+          BoxDecoration(color: renk, borderRadius: BorderRadius.circular(6)),
       child: Text(metin,
           style: TextStyle(
-              color: textRenk,
-              fontSize: 11,
-              fontWeight: FontWeight.w700)),
+              color: textRenk, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }

@@ -12,4 +12,6 @@ class AppConstants {
   static const geminiModel = 'gemini-2.5-flash';
   static const fcmVapidKey =
       'BCbuDpNcLLn6GDhwDjBqSFg0oHqXIAPQvqvLDOPo7ZS8Dz3uZ3vUcscXw7VkJkIi9qTvz_j9_PlP6YlsJ64XSpg';
-}
+  static String get admobBannerId => dotenv.env['ADMOB_BANNER_ID'] ?? '';
+  static String get admobRewardedId => dotenv.env['ADMOB_REWARDED_ID'] ?? '';
+  }
