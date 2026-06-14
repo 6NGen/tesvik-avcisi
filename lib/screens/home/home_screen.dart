@@ -292,7 +292,7 @@ class _MisafirBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.altinAcik,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.bugdayAltini.withOpacity(0.5)),
+        border: Border.all(color: AppTheme.bugdayAltini.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
@@ -341,10 +341,10 @@ class _CksKartiState extends State<_CksKarti> {
       decoration: BoxDecoration(
         color: AppTheme.kremBeyaz,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.bugdayAltini.withOpacity(0.4)),
+        border: Border.all(color: AppTheme.bugdayAltini.withValues(alpha: 0.4)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2))
         ],
@@ -501,7 +501,7 @@ class _HizliButon extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-                color: renk.withOpacity(0.3),
+                color: renk.withValues(alpha: 0.3),
                 blurRadius: 8,
                 offset: const Offset(0, 3))
           ],
@@ -533,9 +533,9 @@ class _IlRozeti extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.3)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
       ),
       child: Text('📍 $il',
           style: const TextStyle(
@@ -591,12 +591,12 @@ class _IstatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
             color: vurgulu
                 ? AppTheme.bugdayAltini
-                : Colors.white.withOpacity(0.2)),
+                : Colors.white.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -705,7 +705,7 @@ class _TesvikKarti extends StatelessWidget {
           border: Border.all(color: durum.borderRengi),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2))
           ],

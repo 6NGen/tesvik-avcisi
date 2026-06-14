@@ -9,6 +9,10 @@ import '../services/gemini_servisi.dart';
 import '../services/supabase_servisi.dart';
 import 'profil_provider.dart';
 
+// copyWith'te "geçilmedi" ile "null'a ayarla"yı ayırmak için sentinel.
+// Bununla copyWith(hata: null) hatayı gerçekten temizleyebilir.
+const Object _kBos = Object();
+
 class OcrState {
   final bool yukleniyor;
   final AnalizSonucu? sonuc;
@@ -28,16 +32,16 @@ class OcrState {
 
   OcrState copyWith({
     bool? yukleniyor,
-    AnalizSonucu? sonuc,
-    String? hata,
-    String? dosyaAdi,
+    Object? sonuc = _kBos,
+    Object? hata = _kBos,
+    Object? dosyaAdi = _kBos,
     bool? profilGuncellendi,
   }) =>
       OcrState(
         yukleniyor: yukleniyor ?? this.yukleniyor,
-        sonuc: sonuc ?? this.sonuc,
-        hata: hata ?? this.hata,
-        dosyaAdi: dosyaAdi ?? this.dosyaAdi,
+        sonuc: identical(sonuc, _kBos) ? this.sonuc : sonuc as AnalizSonucu?,
+        hata: identical(hata, _kBos) ? this.hata : hata as String?,
+        dosyaAdi: identical(dosyaAdi, _kBos) ? this.dosyaAdi : dosyaAdi as String?,
         profilGuncellendi: profilGuncellendi ?? this.profilGuncellendi,
       );
 }

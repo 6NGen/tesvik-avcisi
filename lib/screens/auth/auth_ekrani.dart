@@ -51,7 +51,7 @@ class AuthEkrani extends ConsumerWidget {
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                       border: Border.all(
                           color: AppTheme.bugdayAltini, width: 2.5),
@@ -74,11 +74,11 @@ class AuthEkrani extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppTheme.bugdayAltini.withOpacity(0.2),
+                      color: AppTheme.bugdayAltini.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                           color: AppTheme.bugdayAltini
-                              .withOpacity(0.4)),
+                              .withValues(alpha: 0.4)),
                     ),
                     child: const Text('Çiftçinin hibe asistanı',
                         style: TextStyle(

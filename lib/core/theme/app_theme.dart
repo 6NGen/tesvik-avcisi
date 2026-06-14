@@ -28,7 +28,6 @@ class AppTheme {
           primary: ormanYesili,
           secondary: bugdayAltini,
           surface: kremBeyaz,
-          background: cimensoluk,
         ),
         scaffoldBackgroundColor: cimensoluk,
         appBarTheme: const AppBarTheme(

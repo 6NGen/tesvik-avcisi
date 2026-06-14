@@ -2,11 +2,63 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/profil_provider.dart';
 import '../profil/profil_ekrani.dart';
+
+// ── BİLDİRİM TERCİHLERİ (cihazda kalıcı) ──────────────────────────
+// NOT: Bu tercihler şu an yalnızca cihazda saklanıyor. Sunucu tarafı
+// (scraper/push_bildirim.py) henüz bu tercihe göre filtreleme yapmıyor;
+// kapatınca bildirim akışının gerçekten durması için backend tarafında
+// kullanıcı tercihinin okunması gerekir (ayrı iş).
+class BildirimTercihleri {
+  final bool sonTarih;
+  final bool yeniHibe;
+  const BildirimTercihleri({this.sonTarih = true, this.yeniHibe = true});
+
+  BildirimTercihleri copyWith({bool? sonTarih, bool? yeniHibe}) =>
+      BildirimTercihleri(
+        sonTarih: sonTarih ?? this.sonTarih,
+        yeniHibe: yeniHibe ?? this.yeniHibe,
+      );
+}
+
+class BildirimTercihleriNotifier extends StateNotifier<BildirimTercihleri> {
+  static const _kSonTarih = 'bildirim_son_tarih';
+  static const _kYeniHibe = 'bildirim_yeni_hibe';
+
+  BildirimTercihleriNotifier() : super(const BildirimTercihleri()) {
+    _yukle();
+  }
+
+  Future<void> _yukle() async {
+    final p = await SharedPreferences.getInstance();
+    state = BildirimTercihleri(
+      sonTarih: p.getBool(_kSonTarih) ?? true,
+      yeniHibe: p.getBool(_kYeniHibe) ?? true,
+    );
+  }
+
+  Future<void> sonTarihAyarla(bool v) async {
+    state = state.copyWith(sonTarih: v);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kSonTarih, v);
+  }
+
+  Future<void> yeniHibeAyarla(bool v) async {
+    state = state.copyWith(yeniHibe: v);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kYeniHibe, v);
+  }
+}
+
+final bildirimTercihleriProvider =
+    StateNotifierProvider<BildirimTercihleriNotifier, BildirimTercihleri>(
+  (ref) => BildirimTercihleriNotifier(),
+);
 
 class AyarlarEkrani extends ConsumerWidget {
   const AyarlarEkrani({super.key});
@@ -14,6 +66,7 @@ class AyarlarEkrani extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profil = ref.watch(profilProvider).profil;
+    final bildirimTercihleri = ref.watch(bildirimTercihleriProvider);
     final user = Supabase.instance.client.auth.currentUser;
     final adSoyad = user?.userMetadata?['full_name'] ?? 'Kullanıcı';
     final email = user?.email ?? '';
@@ -110,8 +163,10 @@ class AyarlarEkrani extends ConsumerWidget {
                 baslik: 'Son Tarih Hatırlatmaları',
                 aciklama: 'Hibe son başvuru tarihlerinden önce bildir',
                 trailing: Switch(
-                  value: true,
-                  onChanged: (_) {},
+                  value: bildirimTercihleri.sonTarih,
+                  onChanged: (v) => ref
+                      .read(bildirimTercihleriProvider.notifier)
+                      .sonTarihAyarla(v),
                   activeThumbColor: AppTheme.ormanYesili,
                 ),
               ),
@@ -120,8 +175,10 @@ class AyarlarEkrani extends ConsumerWidget {
                 baslik: 'Yeni Hibe Bildirimleri',
                 aciklama: 'Sana uygun yeni hibe açıldığında bildir',
                 trailing: Switch(
-                  value: true,
-                  onChanged: (_) {},
+                  value: bildirimTercihleri.yeniHibe,
+                  onChanged: (v) => ref
+                      .read(bildirimTercihleriProvider.notifier)
+                      .yeniHibeAyarla(v),
                   activeThumbColor: AppTheme.ormanYesili,
                 ),
               ),

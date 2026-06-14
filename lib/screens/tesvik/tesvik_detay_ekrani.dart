@@ -146,7 +146,7 @@ class TesvikDetayEkrani extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.white.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(tesvik.kurum!,
@@ -475,10 +475,10 @@ class _BilgiKarti extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: renkli ? renk.withOpacity(0.08) : AppTheme.kremBeyaz,
+        color: renkli ? renk.withValues(alpha: 0.08) : AppTheme.kremBeyaz,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: renkli ? renk.withOpacity(0.4) : Colors.green.shade100,
+          color: renkli ? renk.withValues(alpha: 0.4) : Colors.green.shade100,
         ),
       ),
       child: Row(

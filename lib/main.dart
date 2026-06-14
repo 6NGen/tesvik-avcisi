@@ -28,7 +28,12 @@ void main() async {
   
   WidgetsFlutterBinding.ensureInitialized();
   await MobileAds.instance.initialize();
-  await dotenv.load(fileName: ".env");
+  // .env eksik/bozuksa uygulama açılışta çökmemeli; ilgili anahtarlar boş kalır.
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint('.env yüklenemedi (anahtarlar boş olabilir): $e');
+  }
   await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(

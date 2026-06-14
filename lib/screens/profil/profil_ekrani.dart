@@ -330,7 +330,7 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
                         ? [
                             BoxShadow(
                               color: AppTheme.ormanYesili
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                               blurRadius: 12,
                               offset: const Offset(0, 4),
                             )
@@ -534,7 +534,7 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
             'Bu alanlar opsiyoneldir. Boş bırakabilirsiniz.',
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: AppTheme.gri.withOpacity(0.6),
+                color: AppTheme.gri.withValues(alpha: 0.6),
                 fontSize: 12),
           ),
         ],
@@ -603,7 +603,7 @@ class _MiktarAlani extends StatelessWidget {
         const SizedBox(height: 4),
         Text(ipucu,
             style: TextStyle(
-                color: AppTheme.gri.withOpacity(0.6),
+                color: AppTheme.gri.withValues(alpha: 0.6),
                 fontSize: 11)),
       ],
     );

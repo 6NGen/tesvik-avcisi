@@ -25,7 +25,7 @@ class SupabaseServisi {
   Future<List<TesvikModel>> tesvikleriGetir() async {
     final response = await _client
         .from('tesvikler')
-        .select('isim, basvuru_url, son_basvuru_tarihi, uygun_iller, uygun_urunler, etiketler, min_dekar')
+        .select('id, isim, kurum, basvuru_url, son_basvuru_tarihi, uygun_iller, uygun_urunler, etiketler, min_dekar')
         .eq('aktif', true);
     return (response as List<dynamic>)
         .map((json) => TesvikModel.fromJson(json as Map<String, dynamic>))
