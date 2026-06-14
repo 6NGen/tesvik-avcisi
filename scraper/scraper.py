@@ -281,23 +281,34 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
         url_lower = href.lower()
         if any(k in url_lower for k in KOSGEB_KARA_LISTE):
             continue
-        if any(k in url_lower for k in ["destek", "program", "hibe", "kredi"]):
-            linkler.add(href)
+        # Yalnızca gerçek program detay sayfaları (/destekdetay/{id}/{slug}).
+        # e-bülten haberlerini ve pagination (?page=) linklerini ele.
+        if "/destekdetay/" not in url_lower:
+            continue
+        if "e-bulten" in url_lower or "?page=" in url_lower:
+            continue
+        linkler.add(href)
 
-    print(f"  {len(linkler)} link bulundu")
+    print(f"  {len(linkler)} program linki bulundu")
 
-    for link in list(linkler)[:15]:
+    for link in list(linkler)[:20]:
         try:
             pr = requests.get(link, headers=HEADERS, timeout=60)
             pr.raise_for_status()
             psoup = BeautifulSoup(pr.text, "lxml")
 
+            # KOSGEB program sayfalarında h1/h2 yok; başlık h3'te ya da
+            # <title> ("X Destek Programı - KOSGEB ...") içinde.
             baslik = None
-            for tag in ["h1", "h2"]:
+            for tag in ["h1", "h2", "h3"]:
                 el = psoup.find(tag)
-                if el:
+                if el and len(el.get_text(strip=True)) >= 10:
                     baslik = el.get_text(strip=True)
                     break
+            if not baslik:
+                t = psoup.find("title")
+                if t:
+                    baslik = t.get_text(strip=True).split(" - ")[0].strip()
 
             if not baslik or len(baslik) < 10:
                 continue
