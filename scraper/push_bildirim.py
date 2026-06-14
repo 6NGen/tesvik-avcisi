@@ -87,6 +87,17 @@ def bildirim_kaydet(db, tesvik_id: str, bildirim_turu: str):
         print(f"  ⚠️  Bildirim kaydedilemedi: {e}")
 
 
+def gonderilmis_yeni_idler(db) -> set:
+    """'yeni' (yeni hibe) bildirimi yapılmış teşvik id'leri."""
+    try:
+        r = db.table("gonderilen_bildirimler")\
+            .select("tesvik_id").eq("bildirim_turu", "yeni").execute()
+        return {row["tesvik_id"] for row in (r.data or [])}
+    except Exception as e:
+        print(f"  ⚠️  Yeni-hibe geçmişi okunamadı: {e}")
+        return set()
+
+
 # ── PROFİL EŞLEŞTİRME ──────────────────────────────────────────────
 # Uygulamadaki eslesme_servisi.dart'ın SADELEŞTİRİLMİŞ Python portu.
 # Bildirim için "bu teşvik bu profile uyuyor mu?" boolean'ı yeterli; Dart'taki
@@ -174,14 +185,38 @@ def main():
     except Exception as e:
         print(f"  ⚠️  Sorgu hatası: {e}")
 
-    if not bildirim_tesvikler:
+    # Yeni hibe adayları: aktif olup henüz 'yeni' bildirimi yapılmamış teşvikler.
+    # (Mevcut teşvikler migration ile önceden işaretlendiği için ilk çalıştırmada
+    #  toplu spam olmaz; yalnızca sonradan eklenenler tetiklenir.)
+    yeni_tesvikler = []
+    try:
+        gonderilmis = gonderilmis_yeni_idler(db)
+        yr = db.table("tesvikler")\
+            .select("id, isim, uygun_iller, uygun_urunler")\
+            .eq("aktif", True).execute()
+        for t in (yr.data or []):
+            if t["id"] in gonderilmis:
+                continue
+            yeni_tesvikler.append({
+                "id": t["id"],
+                "isim": t["isim"],
+                "uygun_iller": t.get("uygun_iller") or [],
+                "uygun_urunler": t.get("uygun_urunler") or [],
+            })
+        if yeni_tesvikler:
+            print(f"  🆕 {len(yeni_tesvikler)} yeni hibe adayı bulundu")
+    except Exception as e:
+        print(f"  ⚠️  Yeni hibe sorgusu hatası: {e}")
+
+    if not bildirim_tesvikler and not yeni_tesvikler:
         print("✅ Bugün gönderilecek yeni bildirim yok.")
         return
 
     # Profilleri çek (user_id → profil); tercih + eşleşme için
     try:
         prof_r = db.table("kullanici_profilleri")\
-            .select("user_id, il, urunler, bildirim_son_tarih").execute()
+            .select("user_id, il, urunler, bildirim_son_tarih, bildirim_yeni_hibe")\
+            .execute()
         profiller = {p["user_id"]: p
                      for p in (prof_r.data or []) if p.get("user_id")}
     except Exception as e:
@@ -237,6 +272,27 @@ def main():
         # Eşik bazında bir kez işaretle (global). NOT: bu eşiğe sonradan giren
         # kullanıcılar bu turu kaçırabilir; bot günlük çalıştığı için kabul edilir.
         bildirim_kaydet(db, tesvik["id"], tesvik["esik_tur"])
+
+    # ── YENİ HİBE BİLDİRİMLERİ ──────────────────────────────────────
+    for tesvik in yeni_tesvikler:
+        baslik = "🆕 Yeni Hibe!"
+        icerik = f"{tesvik['isim'][:60]} sana uygun olabilir."
+        hedef = 0
+        for uid, tokenlar in kullanici_tokenlari.items():
+            profil = profiller.get(uid)
+            if not profil:
+                continue  # profili yok → kişiselleştirilemez
+            if not profil.get("bildirim_yeni_hibe", True):
+                continue  # kullanıcı yeni hibe bildirimini kapatmış
+            if not tesvik_profile_uyuyor(tesvik, profil):
+                continue  # O6: profile uymuyor
+            for token in tokenlar:
+                if fcm_bildirim_gonder(token, baslik, icerik, access_token):
+                    basarili += 1
+                    hedef += 1
+        print(f"  🆕 {tesvik['isim'][:40]}: {hedef} cihaza gönderildi")
+        # 'yeni' türünde bir kez işaretle → bir daha yeni-hibe bildirimi gitmez
+        bildirim_kaydet(db, tesvik["id"], "yeni")
 
     print(f"\n✅ {basarili} bildirim gönderildi.")
     print("=" * 55)
