@@ -94,9 +94,13 @@ class SupabaseServisi {
 
   Future<void> tokenKaydet(String token) async {
     try {
+      // user_id çağrı anındaki oturuma göre yazılır: giriş varsa kullanıcı,
+      // misafirse null. Bu sayede push servisi token'ı profile bağlayabilir.
+      final userId = _client.auth.currentUser?.id;
       await _client.from('user_tokens').upsert(
         {
           'token': token,
+          'user_id': userId,
           'platform': 'android',
           'guncelleme': DateTime.now().toIso8601String(),
         },

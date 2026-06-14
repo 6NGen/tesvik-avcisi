@@ -87,6 +87,37 @@ def bildirim_kaydet(db, tesvik_id: str, bildirim_turu: str):
         print(f"  ⚠️  Bildirim kaydedilemedi: {e}")
 
 
+# ── PROFİL EŞLEŞTİRME ──────────────────────────────────────────────
+# Uygulamadaki eslesme_servisi.dart'ın SADELEŞTİRİLMİŞ Python portu.
+# Bildirim için "bu teşvik bu profile uyuyor mu?" boolean'ı yeterli; Dart'taki
+# puanlama yerine eliminasyon kriterleri (il + ürün) kullanılır.
+# DİKKAT: Dart tarafı değişirse burayı da güncelle (iki ayrı implementasyon).
+
+def _il_anahtar(s: str) -> str:
+    """Türkçe büyük/küçük harf duyarsız il karşılaştırma anahtarı (ilEslesir portu)."""
+    if not s:
+        return ""
+    harita = {"ç": "c", "Ç": "c", "ğ": "g", "Ğ": "g", "ı": "i", "İ": "i",
+              "I": "i", "ö": "o", "Ö": "o", "ş": "s", "Ş": "s", "ü": "u", "Ü": "u"}
+    return "".join(harita.get(ch, ch) for ch in s.strip()).lower()
+
+
+def tesvik_profile_uyuyor(tesvik: dict, profil: dict) -> bool:
+    # İL: teşvikin uygun illeri varsa profilin ili eşleşmeli (boşsa tüm Türkiye)
+    iller = tesvik.get("uygun_iller") or []
+    if iller:
+        p_il = _il_anahtar(profil.get("il") or "")
+        if not p_il or not any(_il_anahtar(i) == p_il for i in iller):
+            return False
+    # ÜRÜN: teşvikin uygun ürünleri varsa en az biri profilde olmalı
+    urunler = tesvik.get("uygun_urunler") or []
+    if urunler:
+        p_urunler = {u.casefold() for u in (profil.get("urunler") or [])}
+        if not p_urunler or not any(u.casefold() in p_urunler for u in urunler):
+            return False
+    return True
+
+
 def main():
     print("=" * 55)
     print(f"🔔 Push Bildirim Servisi — {datetime.now().strftime('%d/%m/%Y %H:%M')}")
@@ -108,7 +139,7 @@ def main():
     try:
         hedef_bitis = (bugun + timedelta(days=15)).strftime("%Y-%m-%d")
         r = db.table("tesvikler")\
-            .select("id, isim, son_basvuru_tarihi")\
+            .select("id, isim, son_basvuru_tarihi, uygun_iller, uygun_urunler")\
             .eq("aktif", True)\
             .gte("son_basvuru_tarihi", bugun.strftime("%Y-%m-%d"))\
             .lte("son_basvuru_tarihi", hedef_bitis)\
@@ -135,6 +166,8 @@ def main():
                     "kalan_gun": kalan,
                     "esik_tur": esik_tur,
                     "emoji": emoji,
+                    "uygun_iller": t.get("uygun_iller") or [],
+                    "uygun_urunler": t.get("uygun_urunler") or [],
                 })
                 print(f"  ⏰ {kalan} gün kaldı (eşik {esik_gun}): {t['isim'][:40]}")
 
@@ -145,19 +178,34 @@ def main():
         print("✅ Bugün gönderilecek yeni bildirim yok.")
         return
 
-    # FCM tokenları al
+    # Profilleri çek (user_id → profil); tercih + eşleşme için
     try:
-        tokens_r = db.table("user_tokens").select("token").execute()
-        tokenlar = [r["token"] for r in (tokens_r.data or [])]
+        prof_r = db.table("kullanici_profilleri")\
+            .select("user_id, il, urunler, bildirim_son_tarih").execute()
+        profiller = {p["user_id"]: p
+                     for p in (prof_r.data or []) if p.get("user_id")}
+    except Exception as e:
+        print(f"  ⚠️  Profiller alınamadı: {e}")
+        return
+
+    # Token'ları çek ve user_id'ye grupla (misafir/null token atlanır)
+    try:
+        tok_r = db.table("user_tokens").select("token, user_id").execute()
     except Exception as e:
         print(f"  ⚠️  Token listesi alınamadı: {e}")
         return
 
-    if not tokenlar:
-        print("⚠️  Kayıtlı kullanıcı tokeni yok.")
+    kullanici_tokenlari: dict = {}
+    for row in (tok_r.data or []):
+        uid, token = row.get("user_id"), row.get("token")
+        if uid and token:
+            kullanici_tokenlari.setdefault(uid, []).append(token)
+
+    if not kullanici_tokenlari:
+        print("⚠️  Kullanıcıya bağlı token yok (kişisel bildirim gönderilemez).")
         return
 
-    print(f"\n📱 {len(tokenlar)} kullanıcıya bildirim gönderiliyor...\n")
+    print(f"\n📱 {len(kullanici_tokenlari)} kayıtlı kullanıcı için eşleştiriliyor...\n")
 
     try:
         access_token = firebase_access_token_al()
@@ -168,15 +216,26 @@ def main():
     basarili = 0
     for tesvik in bildirim_tesvikler:
         kalan = tesvik["kalan_gun"]
-        emoji = tesvik["emoji"]
-        baslik = f"{emoji} Son {kalan} Gün!"
-        icerik = f'{tesvik["isim"][:60]} için başvuru süresi dolmak üzere.'
+        baslik = f"{tesvik['emoji']} Son {kalan} Gün!"
+        icerik = f"{tesvik['isim'][:60]} için başvuru süresi dolmak üzere."
 
-        for token in tokenlar:
-            if fcm_bildirim_gonder(token, baslik, icerik, access_token):
-                basarili += 1
+        hedef = 0
+        for uid, tokenlar in kullanici_tokenlari.items():
+            profil = profiller.get(uid)
+            if not profil:
+                continue  # profili yok → kişiselleştirilemez
+            if not profil.get("bildirim_son_tarih", True):
+                continue  # kullanıcı son-tarih bildirimini kapatmış (D4)
+            if not tesvik_profile_uyuyor(tesvik, profil):
+                continue  # O6: profile uymuyor
+            for token in tokenlar:
+                if fcm_bildirim_gonder(token, baslik, icerik, access_token):
+                    basarili += 1
+                    hedef += 1
 
-        # Gönderildi olarak kaydet
+        print(f"  📤 {tesvik['isim'][:40]}: {hedef} cihaza gönderildi")
+        # Eşik bazında bir kez işaretle (global). NOT: bu eşiğe sonradan giren
+        # kullanıcılar bu turu kaçırabilir; bot günlük çalıştığı için kabul edilir.
         bildirim_kaydet(db, tesvik["id"], tesvik["esik_tur"])
 
     print(f"\n✅ {basarili} bildirim gönderildi.")

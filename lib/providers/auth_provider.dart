@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'profil_provider.dart';
+import '../services/notification_service.dart';
 
 final authProvider = StreamProvider<User?>((ref) {
   return Supabase.instance.client.auth.onAuthStateChange
@@ -62,6 +63,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       // Giriş yapılınca profili yeniden yükle
       await _ref.read(profilProvider.notifier).yenile();
+      // FCM token'ını bu kullanıcıya bağla (push kişiselleştirmesi için)
+      await NotificationService().tokeniKullaniciylaEslestir();
 
       state = state.copyWith(yukleniyor: false);
     } catch (e) {
@@ -81,6 +84,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _client.auth.signOut();
       // Çıkış yapınca profili sıfırla
       _ref.read(profilProvider.notifier).sifirla();
+      // Token'ın user_id'sini null'a çek (cihaz misafire döner)
+      await NotificationService().tokeniKullaniciylaEslestir();
     } catch (e) {
       // Hata olsa bile devam et
     } finally {

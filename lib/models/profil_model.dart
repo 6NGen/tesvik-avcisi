@@ -42,6 +42,8 @@ class ProfilModel {
   final double? dekar;
   final int? kovanSayisi;
   final int? hayvanSayisi;
+  final bool bildirimSonTarih; // son başvuru tarihi hatırlatmaları
+  final bool bildirimYeniHibe; // yeni hibe bildirimleri
 
   const ProfilModel({
     required this.userId,
@@ -51,7 +53,32 @@ class ProfilModel {
     this.dekar,
     this.kovanSayisi,
     this.hayvanSayisi,
+    this.bildirimSonTarih = true,
+    this.bildirimYeniHibe = true,
   });
+
+  ProfilModel copyWith({
+    String? userId,
+    List<UreticiTipi>? ureticiTipleri,
+    String? il,
+    List<String>? urunler,
+    double? dekar,
+    int? kovanSayisi,
+    int? hayvanSayisi,
+    bool? bildirimSonTarih,
+    bool? bildirimYeniHibe,
+  }) =>
+      ProfilModel(
+        userId: userId ?? this.userId,
+        ureticiTipleri: ureticiTipleri ?? this.ureticiTipleri,
+        il: il ?? this.il,
+        urunler: urunler ?? this.urunler,
+        dekar: dekar ?? this.dekar,
+        kovanSayisi: kovanSayisi ?? this.kovanSayisi,
+        hayvanSayisi: hayvanSayisi ?? this.hayvanSayisi,
+        bildirimSonTarih: bildirimSonTarih ?? this.bildirimSonTarih,
+        bildirimYeniHibe: bildirimYeniHibe ?? this.bildirimYeniHibe,
+      );
 
   // Geriye dönük uyumluluk için
   UreticiTipi get ureticiTipi =>
@@ -114,6 +141,9 @@ class ProfilModel {
       dekar: (json['dekar'] as num?)?.toDouble(),
       kovanSayisi: (json['kovan_sayisi'] as num?)?.toInt(),
       hayvanSayisi: (json['hayvan_sayisi'] as num?)?.toInt(),
+      // Kolon yoksa (migration öncesi) varsayılan açık.
+      bildirimSonTarih: json['bildirim_son_tarih'] as bool? ?? true,
+      bildirimYeniHibe: json['bildirim_yeni_hibe'] as bool? ?? true,
     );
   }
 

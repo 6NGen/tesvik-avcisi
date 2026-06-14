@@ -118,6 +118,29 @@ class ProfilNotifier extends StateNotifier<ProfilState> {
     }
   }
 
+  // Bildirim tercihini güncelle (Ayarlar'daki switch'ler). Optimistik:
+  // önce yerel state, sonra DB'ye yazılır. Push servisi bu kolonları okuyacak.
+  Future<void> bildirimTercihiAyarla({bool? sonTarih, bool? yeniHibe}) async {
+    final mevcut = state.profil;
+    if (mevcut == null) return;
+    final yeni = mevcut.copyWith(
+      bildirimSonTarih: sonTarih,
+      bildirimYeniHibe: yeniHibe,
+    );
+    state = ProfilState(durum: ProfilYukleme.var_, profil: yeni);
+    try {
+      final guncelleme = <String, dynamic>{};
+      if (sonTarih != null) guncelleme['bildirim_son_tarih'] = sonTarih;
+      if (yeniHibe != null) guncelleme['bildirim_yeni_hibe'] = yeniHibe;
+      await _client
+          .from('kullanici_profilleri')
+          .update(guncelleme)
+          .eq('user_id', mevcut.userId);
+    } catch (e) {
+      debugPrint('Bildirim tercihi kaydedilemedi: $e');
+    }
+  }
+
   // Profili yeniden yükle (giriş yapınca manuel çağrılır). Guard'ı da günceller
   // ki sonrasında gelen signedIn auth olayı aynı id ile tekrar yükleme yapmasın.
   Future<void> yenile() {

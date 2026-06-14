@@ -13,6 +13,8 @@ class NotificationService {
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final SupabaseServisi _db = SupabaseServisi();
 
+  String? _sonToken; // en son alınan FCM token'ı
+
   Future<void> baslat(BuildContext context) async {
     await _fcm.requestPermission();
 
@@ -20,6 +22,7 @@ class NotificationService {
       final token = await _fcm.getToken(vapidKey: AppConstants.fcmVapidKey);
       debugPrint('FCM Token: $token');
       if (token != null) {
+        _sonToken = token;
         debugPrint('Token kaydediliyor...');
         await _db.tokenKaydet(token);
         debugPrint('Token kaydedildi!');
@@ -30,7 +33,10 @@ class NotificationService {
       debugPrint('FCM Token hatası: $e');
     }
 
-    _fcm.onTokenRefresh.listen(_db.tokenKaydet);
+    _fcm.onTokenRefresh.listen((t) {
+      _sonToken = t;
+      _db.tokenKaydet(t);
+    });
 
     FirebaseMessaging.onMessage.listen((message) {
       if (message.notification != null && context.mounted) {
@@ -46,4 +52,11 @@ class NotificationService {
   }
 
   Future<void> saveDeviceToken(String token) => _db.tokenKaydet(token);
+
+  /// Giriş/çıkış sonrası çağrılır: son token'ı geçerli oturumun user_id'siyle
+  /// yeniden kaydeder (login → token kullanıcıya bağlanır, logout → null olur).
+  Future<void> tokeniKullaniciylaEslestir() async {
+    final token = _sonToken;
+    if (token != null) await _db.tokenKaydet(token);
+  }
 }
