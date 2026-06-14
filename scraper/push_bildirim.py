@@ -69,7 +69,9 @@ def bildirim_gonderildi_mi(db, tesvik_id: str, bildirim_turu: str) -> bool:
             .eq("bildirim_turu", bildirim_turu)\
             .execute()
         return len(r.data or []) > 0
-    except:
+    except Exception as e:
+        # Hata → "gönderilmedi" varsay (bildirim atlanmasındansa tekrar denensin)
+        print(f"  ⚠️  Bildirim durumu sorgulanamadı ({tesvik_id}): {e}")
         return False
 
 
@@ -116,22 +118,25 @@ def main():
             tarih = datetime.strptime(t["son_basvuru_tarihi"], "%Y-%m-%d").date()
             kalan = (tarih - bugun).days
 
-            # Hangi eşiğe denk geliyor?
-            for esik_gun, (esik_tur, emoji) in ESIKLER.items():
-                if kalan == esik_gun:
-                    # Daha önce bu eşik için bildirim gönderildiyse atla
-                    if bildirim_gonderildi_mi(db, t["id"], esik_tur):
-                        print(f"  ⏭️  Zaten gönderildi ({esik_gun} gün): {t['isim'][:40]}")
-                    else:
-                        bildirim_tesvikler.append({
-                            "id": t["id"],
-                            "isim": t["isim"],
-                            "kalan_gun": kalan,
-                            "esik_tur": esik_tur,
-                            "emoji": emoji,
-                        })
-                        print(f"  ⏰ {kalan} gün kaldı: {t['isim'][:40]}")
-                    break
+            # En acil (en küçük) eşiği seç: kalan <= esik. Böylece bot bir gün
+            # çalışmasa bile eşik kaçmaz (ör. kalan=6 → 7gün eşiği yine tetiklenir).
+            esik_gun = next((e for e in sorted(ESIKLER) if kalan <= e), None)
+            if esik_gun is None:
+                continue
+            esik_tur, emoji = ESIKLER[esik_gun]
+
+            # Daha önce bu eşik için bildirim gönderildiyse atla (spam önleme)
+            if bildirim_gonderildi_mi(db, t["id"], esik_tur):
+                print(f"  ⏭️  Zaten gönderildi ({esik_gun} gün): {t['isim'][:40]}")
+            else:
+                bildirim_tesvikler.append({
+                    "id": t["id"],
+                    "isim": t["isim"],
+                    "kalan_gun": kalan,
+                    "esik_tur": esik_tur,
+                    "emoji": emoji,
+                })
+                print(f"  ⏰ {kalan} gün kaldı (eşik {esik_gun}): {t['isim'][:40]}")
 
     except Exception as e:
         print(f"  ⚠️  Sorgu hatası: {e}")

@@ -72,7 +72,22 @@ def gemini_ile_pdf_oku(pdf_bytes: bytes) -> list:
     response.raise_for_status()
 
     data = response.json()
-    metin = data["candidates"][0]["content"]["parts"][0]["text"]
+
+    # Gemini boş yanıt / safety block dönebilir → güvenli erişim
+    block = (data.get("promptFeedback") or {}).get("blockReason")
+    if block:
+        raise RuntimeError(f"Gemini içeriği engelledi (blockReason: {block})")
+
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise RuntimeError(f"Gemini aday (candidate) döndürmedi: {data}")
+
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    if not parts or "text" not in parts[0]:
+        finish = candidates[0].get("finishReason", "bilinmiyor")
+        raise RuntimeError(
+            f"Gemini metin döndürmedi (finishReason: {finish})")
+    metin = parts[0]["text"]
 
     # JSON temizle
     metin = metin.strip()

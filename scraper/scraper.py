@@ -2,9 +2,6 @@
 # Teşvik Avcısı Bot v4 — yatirimadestek.gov.tr + KOSGEB
 # Her gece 02:00 TR (UTC 23:00) çalışır.
 
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 import os
 import re
 import time
@@ -36,7 +33,8 @@ def mevcut_isimler(db: Client) -> set:
     try:
         r = db.table("tesvikler").select("isim").execute()
         return {row["isim"].strip() for row in (r.data or []) if row.get("isim")}
-    except:
+    except Exception as e:
+        print(f"  ⚠️  Mevcut isimler okunamadı: {e}")
         return set()
 
 
@@ -74,7 +72,8 @@ def guncelle(db: Client, tesvik: dict) -> bool:
             "guncelleme": datetime.now().isoformat(),
         }).eq("isim", isim).execute()
         return True
-    except:
+    except Exception as e:
+        print(f"  ⚠️  Güncelleme hatası ({isim[:40]}): {e}")
         return False
 
 
@@ -100,8 +99,8 @@ def tarih_parse(metin: str) -> str | None:
         try:
             gun, ay, yil = int(m.group(1)), int(m.group(2)), int(m.group(3))
             return datetime(yil, ay, gun).strftime("%Y-%m-%d")
-        except:
-            pass
+        except (ValueError, TypeError):
+            pass  # geçersiz tarih (ör. 31.02.2026) → None
     return None
 
 
@@ -179,9 +178,9 @@ def yatirimadestek_tara(db: Client, mevcut: set) -> int:
     print(f"\n🏛️  Tarım ve Orman Bakanlığı (yatirimadestek.gov.tr)")
 
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20, verify=False)
+        r = requests.get(url, headers=HEADERS, timeout=60)
         r.raise_for_status()
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"  ⚠️  Bağlantı hatası: {e}")
         return 0
 
@@ -267,10 +266,10 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
     eklenen = 0
 
     try:
-        r = requests.get(ana_url, headers=HEADERS, timeout=20, verify=False)
+        r = requests.get(ana_url, headers=HEADERS, timeout=60)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "lxml")
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"  ⚠️  Bağlantı hatası: {e}")
         return 0
 
@@ -289,7 +288,7 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
 
     for link in list(linkler)[:15]:
         try:
-            pr = requests.get(link, headers=HEADERS, timeout=15, verify=False)
+            pr = requests.get(link, headers=HEADERS, timeout=60)
             pr.raise_for_status()
             psoup = BeautifulSoup(pr.text, "lxml")
 
@@ -317,8 +316,8 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
                     dt = datetime(yil, ay, gun)
                     if dt > datetime.now():
                         son_tarih = dt.strftime("%Y-%m-%d")
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    pass  # geçersiz tarih → son_tarih None kalır
 
             urunler, etiketler = urun_ve_etiket_cikar(baslik)
             if "KOBİ" not in etiketler:
@@ -343,7 +342,11 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
 
             time.sleep(1)
 
-        except Exception:
+        except requests.RequestException as e:
+            print(f"  ⚠️  Link atlandı ({link[:60]}): {e}")
+            continue
+        except Exception as e:
+            print(f"  ⚠️  Beklenmeyen hata ({link[:60]}): {e}")
             continue
 
     return eklenen
