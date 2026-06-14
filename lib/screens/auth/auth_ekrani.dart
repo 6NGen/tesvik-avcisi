@@ -167,7 +167,7 @@ class AuthEkrani extends ConsumerWidget {
                                   'https://www.google.com/favicon.ico',
                                   width: 24,
                                   height: 24,
-                                  errorBuilder: (_, __, ___) =>
+                                  errorBuilder: (_, _, _) =>
                                       const Text('G',
                                           style: TextStyle(
                                               fontSize: 20,

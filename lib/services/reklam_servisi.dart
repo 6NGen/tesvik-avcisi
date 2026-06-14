@@ -1,4 +1,9 @@
 // lib/services/reklam_servisi.dart
+//
+// NOT: Bu servis şu an hiçbir ekranda çağrılmıyor (banner gösterilmiyor).
+// main.dart'ta MobileAds.instance.initialize() yapılıyor ama bannerWidget()/
+// bannerYukle() çağrılmadığından reklam render olmuyor. Bilerek bırakıldı —
+// ileride reklam entegrasyonu için kullanılacak. Silmeyin.
 
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';

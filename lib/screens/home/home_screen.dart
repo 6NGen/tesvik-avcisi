@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/tesvik_model.dart';
 import '../../models/profil_model.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/profil_provider.dart';
 import '../../services/supabase_servisi.dart';
 import '../../services/eslesme_servisi.dart';
@@ -173,7 +172,7 @@ class HomeScreen extends ConsumerWidget {
                             );
                           },
                           loading: () => const SizedBox(),
-                          error: (_, __) => const SizedBox(),
+                          error: (_, _) => const SizedBox(),
                         ),
                       ],
                     ),
@@ -222,7 +221,7 @@ class HomeScreen extends ConsumerWidget {
                     data: (t) => _SayacRozeti(
                         sayi: _filtrele(t, profil, gizlenenler).length),
                     loading: () => const SizedBox(),
-                    error: (_, __) => const SizedBox(),
+                    error: (_, _) => const SizedBox(),
                   ),
                 ],
               ),

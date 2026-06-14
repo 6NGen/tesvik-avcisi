@@ -36,7 +36,7 @@ class TesvikDetayEkrani extends ConsumerWidget {
 
     // 1. İL KONTROLÜ
     if (tesvik.uygunIller != null && tesvik.uygunIller!.isNotEmpty) {
-      if (tesvik.uygunIller!.contains(profil.il)) {
+      if (tesvik.uygunIller!.any((i) => ilEslesir(i, profil.il))) {
         nedenler.add('📍 ${profil.il} ilinizde geçerli');
       } else {
         uyumsuzlar.add('📍 ${profil.il} ilinizde geçerli değil');

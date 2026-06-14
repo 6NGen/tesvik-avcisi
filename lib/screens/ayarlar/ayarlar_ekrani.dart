@@ -112,7 +112,7 @@ class AyarlarEkrani extends ConsumerWidget {
                 trailing: Switch(
                   value: true,
                   onChanged: (_) {},
-                  activeColor: AppTheme.ormanYesili,
+                  activeThumbColor: AppTheme.ormanYesili,
                 ),
               ),
               _AyarItem(
@@ -122,7 +122,7 @@ class AyarlarEkrani extends ConsumerWidget {
                 trailing: Switch(
                   value: true,
                   onChanged: (_) {},
-                  activeColor: AppTheme.ormanYesili,
+                  activeThumbColor: AppTheme.ormanYesili,
                 ),
               ),
             ],

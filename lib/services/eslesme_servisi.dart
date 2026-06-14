@@ -44,7 +44,7 @@ class EslesmeServisi {
 
     // ── 1. İL KONTROLÜ ─────────────────────────────────────
     if (tesvik.uygunIller != null && tesvik.uygunIller!.isNotEmpty) {
-      if (!tesvik.uygunIller!.contains(profil.il)) {
+      if (!tesvik.uygunIller!.any((i) => ilEslesir(i, profil.il))) {
         return null; // Bu ile uygun değil, tamamen elendi
       }
       puan += 0.30;

@@ -1,11 +1,13 @@
 // lib/providers/profil_provider.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profil_model.dart';
+import 'auth_provider.dart';
 
 // Profil yükleme durumu
-enum ProfilYukleme { yukleniyor, var_, yok }
+enum ProfilYukleme { yukleniyor, var_, yok, hata }
 
 class ProfilState {
   final ProfilYukleme durum;
@@ -24,15 +26,39 @@ class ProfilState {
 
   // Profil yok mu? (yükleme bitti, gerçekten yok)
   bool get profilYok => durum == ProfilYukleme.yok;
+
+  // Yükleme sırasında hata mı oluştu? (ağ vb. — profilin yok olduğu anlamına gelmez)
+  bool get profilHata => durum == ProfilYukleme.hata;
 }
 
 class ProfilNotifier extends StateNotifier<ProfilState> {
+  // Başlatma artık authProvider listener'ı tarafından yapılır (bkz. profilProvider).
+  // Constructor'da otomatik yükleme YOK — aksi halde açılışta çift yükleme olurdu.
   ProfilNotifier()
-      : super(const ProfilState(durum: ProfilYukleme.yukleniyor)) {
-    _profilYukle();
-  }
+      : super(const ProfilState(durum: ProfilYukleme.yukleniyor));
 
   final _client = Supabase.instance.client;
+
+  // En son profili yüklenen kullanıcı id'si. Aynı kullanıcı için gelen
+  // tekrarlı auth olaylarını (token yenileme, userUpdated) ayıklamak için.
+  String? _yukluUserId;
+
+  /// authProvider değişince çağrılır. Yalnızca kullanıcı GERÇEKTEN değiştiğinde
+  /// profili yeniden yükler; aynı id ile gelen olayları sessizce yok sayar.
+  void authDegisti(User? user) {
+    if (user == null) {
+      // Oturum yok / çıkış yapıldı
+      _yukluUserId = null;
+      if (state.durum != ProfilYukleme.yok) {
+        state = const ProfilState(durum: ProfilYukleme.yok);
+      }
+      return;
+    }
+    // Aynı kullanıcı (ör. saatlik token yenileme) → tekrar yükleme yapma
+    if (user.id == _yukluUserId) return;
+    _yukluUserId = user.id;
+    _profilYukle();
+  }
 
   Future<void> _profilYukle() async {
     final user = _client.auth.currentUser;
@@ -41,6 +67,12 @@ class ProfilNotifier extends StateNotifier<ProfilState> {
     if (user == null) {
       state = const ProfilState(durum: ProfilYukleme.yok);
       return;
+    }
+
+    // DB sorgusu sürerken state 'yok' kalırsa _AppRouter ProfilEkrani'nı bir an
+    // gösterir (flaş). Sorgu başlamadan önce 'yukleniyor'a çek.
+    if (!state.yukleniyor) {
+      state = const ProfilState(durum: ProfilYukleme.yukleniyor);
     }
 
     try {
@@ -58,12 +90,14 @@ class ProfilNotifier extends StateNotifier<ProfilState> {
         state = ProfilState(
           durum: ProfilYukleme.var_,
           profil: ProfilModel.fromJson(
-              response as Map<String, dynamic>),
+              response),
         );
       }
     } catch (e) {
-      // Hata olursa profil yok say (tekrar sormaktan iyisi)
-      state = const ProfilState(durum: ProfilYukleme.yok);
+      // Ağ/sorgu hatası → profili "yok" sayma (kullanıcıyı profil oluşturma
+      // ekranına atmamalı). Ayrı bir hata durumu ver; mevcut profil korunur.
+      debugPrint('Profil yüklenemedi: $e');
+      state = const ProfilState(durum: ProfilYukleme.hata);
     }
   }
 
@@ -84,16 +118,30 @@ class ProfilNotifier extends StateNotifier<ProfilState> {
     }
   }
 
-  // Profili yeniden yükle (giriş yapınca çağrılır)
-  Future<void> yenile() => _profilYukle();
+  // Profili yeniden yükle (giriş yapınca manuel çağrılır). Guard'ı da günceller
+  // ki sonrasında gelen signedIn auth olayı aynı id ile tekrar yükleme yapmasın.
+  Future<void> yenile() {
+    _yukluUserId = _client.auth.currentUser?.id;
+    return _profilYukle();
+  }
 
   // Çıkış yapınca sıfırla
   void sifirla() {
+    _yukluUserId = null;
     state = const ProfilState(durum: ProfilYukleme.yok);
   }
 }
 
 final profilProvider =
-    StateNotifierProvider<ProfilNotifier, ProfilState>(
-  (ref) => ProfilNotifier(),
-);
+    StateNotifierProvider<ProfilNotifier, ProfilState>((ref) {
+  final notifier = ProfilNotifier();
+  // Auth durumunu dinle (watch DEĞİL — watch notifier'ı her token yenilemesinde
+  // yeniden yaratır). fireImmediately: provider geç yaratılıp auth zaten
+  // çözülmüşse ilk değeri kaçırmamak için.
+  ref.listen<AsyncValue<User?>>(
+    authProvider,
+    (previous, next) => notifier.authDegisti(next.valueOrNull),
+    fireImmediately: true,
+  );
+  return notifier;
+});

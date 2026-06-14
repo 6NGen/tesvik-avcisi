@@ -1,6 +1,5 @@
 // lib/providers/ocr_provider.dart
 
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -131,10 +130,9 @@ class OcrNotifier extends StateNotifier<OcrState> {
   /// Mevcut profil ile belge verisini birleştir
   /// Belgede bulunan değerler öncelikli, bulunamayanlar mevcut değerde kalır
   ProfilModel _profilBirlestir(ProfilModel mevcut, Map<String, dynamic> veri) {
-    // il: belgede varsa güncelle
-    final il = (veri['il'] as String?)?.isNotEmpty == true
-        ? veri['il'] as String
-        : mevcut.il;
+    // il: belgede GEÇERLİ bir il varsa güncelle, yoksa mevcut değeri koru.
+    // Bozuk/tanınmayan değer profile yazılmaz (eşleşmeyi bozar).
+    final il = ilDogrula(veri['il'] as String?) ?? mevcut.il;
 
     // uretici_tipleri: belgede varsa güncelle
     final tipler = _tiplerCikar(veri) ?? mevcut.ureticiTipleri;
@@ -160,7 +158,7 @@ class OcrNotifier extends StateNotifier<OcrState> {
 
   /// Belgeden sıfırdan profil oluştur (en az il veya tip olmalı)
   ProfilModel? _profilOlustur(String userId, Map<String, dynamic> veri) {
-    final il = veri['il'] as String? ?? '';
+    final il = ilDogrula(veri['il'] as String?) ?? '';
     final tipler = _tiplerCikar(veri) ?? [UreticiTipi.ciftci];
     final urunler = _urunlerCikar(veri) ?? [];
 

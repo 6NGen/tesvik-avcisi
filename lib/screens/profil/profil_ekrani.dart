@@ -402,7 +402,7 @@ class _ProfilEkraniState extends ConsumerState<ProfilEkrani> {
           border: Border.all(color: Colors.green.shade100),
         ),
         child: DropdownButtonFormField<String>(
-          value: _il,
+          initialValue: _il,
           decoration: const InputDecoration(
             border: InputBorder.none,
             contentPadding:

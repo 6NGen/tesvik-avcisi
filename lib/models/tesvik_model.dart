@@ -41,7 +41,7 @@ class TesvikModel {
       etiketler: json['etiketler'] != null
           ? List<String>.from(json['etiketler'])
           : null,
-      minDekar: json['min_dekar'] as int?,
+      minDekar: (json['min_dekar'] as num?)?.toInt(),
     );
   }
 

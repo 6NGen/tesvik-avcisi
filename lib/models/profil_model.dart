@@ -112,8 +112,8 @@ class ProfilModel {
       il: json['il'] as String? ?? '',
       urunler: List<String>.from(json['urunler'] ?? []),
       dekar: (json['dekar'] as num?)?.toDouble(),
-      kovanSayisi: json['kovan_sayisi'] as int?,
-      hayvanSayisi: json['hayvan_sayisi'] as int?,
+      kovanSayisi: (json['kovan_sayisi'] as num?)?.toInt(),
+      hayvanSayisi: (json['hayvan_sayisi'] as num?)?.toInt(),
     );
   }
 
@@ -149,3 +149,52 @@ const List<String> turkiyeIlleri = [
   'Kırıkkale', 'Batman', 'Şırnak', 'Bartın', 'Ardahan',
   'Iğdır', 'Yalova', 'Karabük', 'Kilis', 'Osmaniye', 'Düzce',
 ];
+
+// ── İL NORMALLEŞTİRME / DOĞRULAMA ──────────────────────────────────
+// İl adlarını Türkçe büyük-küçük harf duyarlılığından bağımsız karşılaştırmak
+// için ortak anahtar üretir. Dart'ın toLowerCase()'i Türkçe İ/I için güvenilir
+// olmadığından bu harfler önce açıkça ASCII karşılıklarına katlanır.
+// Örn: "İSTANBUL", "istanbul", "İstanbul" → "istanbul"; "Iğdır" → "igdir".
+String _ilAnahtar(String s) {
+  const harita = {
+    'ç': 'c', 'Ç': 'c',
+    'ğ': 'g', 'Ğ': 'g',
+    'ı': 'i', 'İ': 'i', 'I': 'i',
+    'ö': 'o', 'Ö': 'o',
+    'ş': 's', 'Ş': 's',
+    'ü': 'u', 'Ü': 'u',
+  };
+  final sb = StringBuffer();
+  for (final ch in s.trim().split('')) {
+    sb.write(harita[ch] ?? ch);
+  }
+  return sb.toString().toLowerCase();
+}
+
+/// Ham (örn. Gemini'den gelen) bir il değerini doğrular ve normalize eder.
+/// Geçerliyse `turkiyeIlleri` içindeki KANONİK adı döndürür, değilse null.
+/// "Ankara/Polatlı" → "Ankara", "06 Ankara" → "Ankara", "ANKARA" → "Ankara".
+String? ilDogrula(String? ham) {
+  if (ham == null) return null;
+  var s = ham.trim();
+  if (s.isEmpty) return null;
+  // "Ankara/Polatlı" gibi alt-bölge → ilk parça
+  if (s.contains('/')) s = s.split('/').first.trim();
+  // "06 Ankara" gibi baştaki plaka kodu/rakamları temizle
+  s = s.replaceFirst(RegExp(r'^\d+\s*'), '').trim();
+  if (s.isEmpty) return null;
+  final anahtar = _ilAnahtar(s);
+  for (final il in turkiyeIlleri) {
+    if (_ilAnahtar(il) == anahtar) return il;
+  }
+  return null;
+}
+
+/// İki il adını Türkçe-duyarlı şekilde karşılaştırır. Boş/null → false.
+bool ilEslesir(String? a, String? b) {
+  if (a == null || b == null) return false;
+  final ka = _ilAnahtar(a);
+  final kb = _ilAnahtar(b);
+  if (ka.isEmpty || kb.isEmpty) return false;
+  return ka == kb;
+}

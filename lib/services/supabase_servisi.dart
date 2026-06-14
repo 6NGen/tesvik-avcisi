@@ -3,7 +3,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/tesvik_model.dart';
-import '../models/profil_model.dart';
 
 class SupabaseServisi {
   static final SupabaseServisi _instance = SupabaseServisi._internal();
@@ -17,7 +16,9 @@ class SupabaseServisi {
   Stream<List<TesvikModel>> tesviklerStream() {
     return _client
         .from('tesvikler')
-        .stream(primaryKey: ['id']).map((jsonList) =>
+        .stream(primaryKey: ['id'])
+        .eq('aktif', true)
+        .map((jsonList) =>
             jsonList.map(TesvikModel.fromJson).toList());
   }
 
