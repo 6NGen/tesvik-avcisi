@@ -21,7 +21,6 @@ dependencies:
   image_picker: ^1.1.2
   http: ^1.2.1
   supabase_flutter: ^2.6.0
-  google_generative_ai: ^0.4.7 # YAPAY ZEKA PAKETİ EKLENDİ
   flutter_markdown: ^0.7.7+1
   url_launcher: ^6.3.2
   firebase_core: ^4.5.0

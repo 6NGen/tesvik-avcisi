@@ -79,12 +79,12 @@ class OcrNotifier extends StateNotifier<OcrState> {
     );
 
     try {
-      final tesvikler = await _db.tesvikleriGetir();
+      // Teşvik listesini ve prompt'u artık Edge Function (belge-analiz) sunucuda
+      // kuruyor; istemci yalnızca görsel + profil gönderir.
       final ProfilModel? mevcutProfil = _ref.read(profilProvider).profil;
 
       final sonuc = await _gemini.belgeAnalizeEt(
         gorselBytes: bytes,
-        tesvikler: tesvikler,
         profil: mevcutProfil,
         dosyaAdi: dosya.name,
       );

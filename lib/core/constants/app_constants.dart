@@ -8,8 +8,8 @@ class AppConstants {
   static const supabaseUrl = 'https://iolnaxaudgzatyrwhpaw.supabase.co';
   static const supabaseKey =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvbG5heGF1ZGd6YXR5cndocGF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNzQzNTUsImV4cCI6MjA4ODk1MDM1NX0.0s-kpKIjPxO52iaqib1Z-kqMNd4WWopwV_1K0WUj0Cw';
-  static String get geminiApiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
-  static const geminiModel = 'gemini-2.5-flash';
+  // NOT: Gemini anahtarı artık istemcide tutulmuyor. Belge analizi Supabase
+  // Edge Function (belge-analiz) üzerinden yapılır; anahtar orada secret olarak durur.
   static const fcmVapidKey =
       'BCbuDpNcLLn6GDhwDjBqSFg0oHqXIAPQvqvLDOPo7ZS8Dz3uZ3vUcscXw7VkJkIi9qTvz_j9_PlP6YlsJ64XSpg';
   static String get admobBannerId => dotenv.env['ADMOB_BANNER_ID'] ?? '';
