@@ -1,8 +1,16 @@
 // lib/services/notification_service.dart
+//
+// Uygulama ömrü boyunca BİR KEZ başlatılır. (Eskiden kök widget her yeniden
+// kurulduğunda tekrar başlatılıyor, onMessage/onTokenRefresh dinleyicileri
+// birikip aynı bildirim birden çok kez gösteriliyordu.)
 
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../core/constants/app_constants.dart';
+import '../core/utils/mesaj.dart';
 import 'supabase_servisi.dart';
 
 class NotificationService {
@@ -10,48 +18,47 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final SupabaseServisi _db = SupabaseServisi();
 
-  String? _sonToken; // en son alınan FCM token'ı
+  bool _baslatildi = false;
+  String? _sonToken;
+  final List<StreamSubscription<dynamic>> _abonelikler = [];
 
-  Future<void> baslat(BuildContext context) async {
-    await _fcm.requestPermission();
+  Future<void> baslat() async {
+    if (_baslatildi) return;
+    _baslatildi = true;
+    if (Firebase.apps.isEmpty) {
+      debugPrint('Firebase hazır değil; bildirimler devre dışı.');
+      return;
+    }
+    final fcm = FirebaseMessaging.instance;
 
     try {
-      final token = await _fcm.getToken(vapidKey: AppConstants.fcmVapidKey);
-      debugPrint('FCM Token: $token');
+      await fcm.requestPermission();
+      final token = await fcm.getToken(vapidKey: AppConstants.fcmVapidKey);
       if (token != null) {
         _sonToken = token;
-        debugPrint('Token kaydediliyor...');
         await _db.tokenKaydet(token);
-        debugPrint('Token kaydedildi!');
-      } else {
-        debugPrint('Token NULL geldi!');
       }
     } catch (e) {
-      debugPrint('FCM Token hatası: $e');
+      debugPrint('FCM token alınamadı: $e');
     }
 
-    _fcm.onTokenRefresh.listen((t) {
-      _sonToken = t;
-      _db.tokenKaydet(t);
-    });
-
-    FirebaseMessaging.onMessage.listen((message) {
-      if (message.notification != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '${message.notification!.title}\n${message.notification!.body}'),
-            backgroundColor: Colors.green[800],
-          ),
-        );
-      }
-    });
+    _abonelikler
+      ..add(fcm.onTokenRefresh.listen((t) {
+        _sonToken = t;
+        _db.tokenKaydet(t);
+      }))
+      ..add(FirebaseMessaging.onMessage.listen((message) {
+        final n = message.notification;
+        if (n == null) return;
+        final metin = [n.title, n.body]
+            .whereType<String>()
+            .where((s) => s.isNotEmpty)
+            .join('\n');
+        if (metin.isNotEmpty) mesajGoster(metin);
+      }));
   }
-
-  Future<void> saveDeviceToken(String token) => _db.tokenKaydet(token);
 
   /// Giriş/çıkış sonrası çağrılır: son token'ı geçerli oturumun user_id'siyle
   /// yeniden kaydeder (login → token kullanıcıya bağlanır, logout → null olur).

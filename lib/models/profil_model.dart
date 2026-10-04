@@ -1,14 +1,28 @@
 // lib/models/profil_model.dart
 
+import 'package:flutter/material.dart';
+import '../core/utils/metin.dart';
+
 enum UreticiTipi {
-  ciftci('Çiftçi', '🌾'),
-  arici('Arıcı', '🐝'),
-  hayvancilik('Hayvancı', '🐄'),
-  organik('Organik', '🌿');
+  ciftci('Çiftçi', '🌾', Icons.agriculture_rounded),
+  arici('Arıcı', '🐝', Icons.hive_rounded),
+  hayvancilik('Hayvancı', '🐄', Icons.pets_rounded),
+  organik('Organik', '🌿', Icons.eco_rounded);
 
   final String etiket;
   final String emoji;
-  const UreticiTipi(this.etiket, this.emoji);
+  final IconData ikon;
+  const UreticiTipi(this.etiket, this.emoji, this.ikon);
+
+  /// DB/Gemini değerinden tip; tanınmayan değer için null (eskiden sessizce
+  /// "çiftçi" sayılıyordu).
+  static UreticiTipi? adiyla(Object? ad) {
+    final s = ad?.toString().trim();
+    for (final t in values) {
+      if (t.name == s) return t;
+    }
+    return null;
+  }
 }
 
 // Tipe göre ürün listeleri
@@ -58,7 +72,6 @@ class ProfilModel {
   });
 
   ProfilModel copyWith({
-    String? userId,
     List<UreticiTipi>? ureticiTipleri,
     String? il,
     List<String>? urunler,
@@ -69,7 +82,7 @@ class ProfilModel {
     bool? bildirimYeniHibe,
   }) =>
       ProfilModel(
-        userId: userId ?? this.userId,
+        userId: userId,
         ureticiTipleri: ureticiTipleri ?? this.ureticiTipleri,
         il: il ?? this.il,
         urunler: urunler ?? this.urunler,
@@ -80,29 +93,31 @@ class ProfilModel {
         bildirimYeniHibe: bildirimYeniHibe ?? this.bildirimYeniHibe,
       );
 
-  // Geriye dönük uyumluluk için
-  UreticiTipi get ureticiTipi =>
-      ureticiTipleri.isNotEmpty ? ureticiTipleri.first : UreticiTipi.ciftci;
-
-  // Tüm tiplerin emoji'leri
-  String get tipEmojileri =>
-      ureticiTipleri.map((t) => t.emoji).join('');
-
-  // Arıcı mı?
+  String get tipEtiketleri => ureticiTipleri.map((t) => t.etiket).join(' · ');
   bool get ariciMi => ureticiTipleri.contains(UreticiTipi.arici);
+  bool get hayvanciMi => ureticiTipleri.contains(UreticiTipi.hayvancilik);
+  bool get araziliMi =>
+      ureticiTipleri.contains(UreticiTipi.ciftci) ||
+      ureticiTipleri.contains(UreticiTipi.organik);
 
-  // Hayvancı mı?
-  bool get hayvancimi =>
-      ureticiTipleri.contains(UreticiTipi.hayvancilik);
+  /// "120 dekar · 40 kovan" (boş olabilir)
+  String get miktarOzeti => [
+        if (dekar != null) '${_sayi(dekar!)} dekar',
+        if (kovanSayisi != null) '$kovanSayisi kovan',
+        if (hayvanSayisi != null) '$hayvanSayisi hayvan',
+      ].join(' · ');
 
-  // Çiftçi mi?
-  bool get ciftciMi => ureticiTipleri.contains(UreticiTipi.ciftci);
+  static String _sayi(double d) =>
+      d == d.roundToDouble() ? d.toInt().toString() : d.toStringAsFixed(1);
 
+  /// Bildirim tercihleri ayrı (bildirimTercihiAyarla) yazılır; upsert onları
+  /// ezmesin diye burada YOK.
   Map<String, dynamic> toJson() => {
         'user_id': userId,
-        'uretici_tipleri':
-            ureticiTipleri.map((t) => t.name).toList(),
-        'uretici_tipi': ureticiTipleri.first.name, // geriye dönük
+        'uretici_tipleri': ureticiTipleri.map((t) => t.name).toList(),
+        'uretici_tipi':
+            (ureticiTipleri.isEmpty ? UreticiTipi.ciftci : ureticiTipleri.first)
+                .name, // geriye dönük
         'il': il,
         'urunler': urunler,
         'dekar': dekar,
@@ -112,94 +127,63 @@ class ProfilModel {
       };
 
   factory ProfilModel.fromJson(Map<String, dynamic> json) {
-    // Çoklu tip (yeni format)
-    List<UreticiTipi> tipler = [];
-    if (json['uretici_tipleri'] != null) {
-      tipler = (json['uretici_tipleri'] as List<dynamic>)
-          .map((t) => UreticiTipi.values.firstWhere(
-                (e) => e.name == t,
-                orElse: () => UreticiTipi.ciftci,
-              ))
-          .toList();
+    var tipler = <UreticiTipi>[];
+    final ham = json['uretici_tipleri'];
+    if (ham is List) {
+      tipler = ham.map(UreticiTipi.adiyla).whereType<UreticiTipi>().toList();
     }
-    // Eski format (geriye dönük uyumluluk)
-    if (tipler.isEmpty && json['uretici_tipi'] != null) {
-      tipler = [
-        UreticiTipi.values.firstWhere(
-          (t) => t.name == json['uretici_tipi'],
-          orElse: () => UreticiTipi.ciftci,
-        )
-      ];
+    if (tipler.isEmpty) {
+      final eski = UreticiTipi.adiyla(json['uretici_tipi']);
+      tipler = [eski ?? UreticiTipi.ciftci];
     }
-    if (tipler.isEmpty) tipler = [UreticiTipi.ciftci];
 
     return ProfilModel(
       userId: json['user_id'] as String,
-      ureticiTipleri: tipler,
+      ureticiTipleri: tipler.toSet().toList(),
       il: json['il'] as String? ?? '',
-      urunler: List<String>.from(json['urunler'] ?? []),
-      dekar: (json['dekar'] as num?)?.toDouble(),
-      kovanSayisi: (json['kovan_sayisi'] as num?)?.toInt(),
-      hayvanSayisi: (json['hayvan_sayisi'] as num?)?.toInt(),
+      urunler: _stringListe(json['urunler']),
+      dekar: sayiOku(json['dekar']),
+      kovanSayisi: sayiOku(json['kovan_sayisi'])?.round(),
+      hayvanSayisi: sayiOku(json['hayvan_sayisi'])?.round(),
       // Kolon yoksa (migration öncesi) varsayılan açık.
       bildirimSonTarih: json['bildirim_son_tarih'] as bool? ?? true,
       bildirimYeniHibe: json['bildirim_yeni_hibe'] as bool? ?? true,
     );
   }
-
-  // Gemini prompt özeti
-  String promptOzeti() {
-    final tipler =
-        ureticiTipleri.map((t) => t.etiket).join(' + ');
-    final miktarlar = [
-      if (dekar != null) '${dekar!.toInt()} dekar',
-      if (kovanSayisi != null) '$kovanSayisi kovan',
-      if (hayvanSayisi != null) '$hayvanSayisi hayvan',
-    ].join(', ');
-    return '$il ilinde $tipler — ${urunler.join(", ")} $miktarlar';
-  }
 }
 
-// Türkiye illeri
+List<String> _stringListe(Object? v) => v is List
+    ? v.whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+    : <String>[];
+
+/// num, "12", "12.5", "12,5" → double; geçersiz/negatif → null.
+/// (Gemini sayıları bazen 12.0 ya da metin olarak döndürüyor; eskiden
+/// `as int?` cast'i patlayıp profil güncellemesini sessizce iptal ediyordu.)
+double? sayiOku(Object? v) {
+  double? d;
+  if (v is num) d = v.toDouble();
+  if (v is String) d = double.tryParse(v.trim().replaceAll(',', '.'));
+  if (d == null || d.isNaN || d.isInfinite || d < 0) return null;
+  return d;
+}
+
+// Türkiye illeri (alfabetik)
 const List<String> turkiyeIlleri = [
-  'Adana', 'Adıyaman', 'Afyonkarahisar', 'Ağrı', 'Amasya',
-  'Ankara', 'Antalya', 'Artvin', 'Aydın', 'Balıkesir',
-  'Bilecik', 'Bingöl', 'Bitlis', 'Bolu', 'Burdur',
-  'Bursa', 'Çanakkale', 'Çankırı', 'Çorum', 'Denizli',
-  'Diyarbakır', 'Edirne', 'Elazığ', 'Erzincan', 'Erzurum',
-  'Eskişehir', 'Gaziantep', 'Giresun', 'Gümüşhane', 'Hakkari',
-  'Hatay', 'Isparta', 'Mersin', 'İstanbul', 'İzmir',
-  'Kars', 'Kastamonu', 'Kayseri', 'Kırklareli', 'Kırşehir',
-  'Kocaeli', 'Konya', 'Kütahya', 'Malatya', 'Manisa',
-  'Kahramanmaraş', 'Mardin', 'Muğla', 'Muş', 'Nevşehir',
-  'Niğde', 'Ordu', 'Rize', 'Sakarya', 'Samsun',
-  'Siirt', 'Sinop', 'Sivas', 'Tekirdağ', 'Tokat',
-  'Trabzon', 'Tunceli', 'Şanlıurfa', 'Uşak', 'Van',
-  'Yozgat', 'Zonguldak', 'Aksaray', 'Bayburt', 'Karaman',
-  'Kırıkkale', 'Batman', 'Şırnak', 'Bartın', 'Ardahan',
-  'Iğdır', 'Yalova', 'Karabük', 'Kilis', 'Osmaniye', 'Düzce',
+  'Adana', 'Adıyaman', 'Afyonkarahisar', 'Ağrı', 'Aksaray', 'Amasya',
+  'Ankara', 'Antalya', 'Ardahan', 'Artvin', 'Aydın', 'Balıkesir',
+  'Bartın', 'Batman', 'Bayburt', 'Bilecik', 'Bingöl', 'Bitlis',
+  'Bolu', 'Burdur', 'Bursa', 'Çanakkale', 'Çankırı', 'Çorum',
+  'Denizli', 'Diyarbakır', 'Düzce', 'Edirne', 'Elazığ', 'Erzincan',
+  'Erzurum', 'Eskişehir', 'Gaziantep', 'Giresun', 'Gümüşhane', 'Hakkari',
+  'Hatay', 'Iğdır', 'Isparta', 'İstanbul', 'İzmir', 'Kahramanmaraş',
+  'Karabük', 'Karaman', 'Kars', 'Kastamonu', 'Kayseri', 'Kırıkkale',
+  'Kırklareli', 'Kırşehir', 'Kilis', 'Kocaeli', 'Konya', 'Kütahya',
+  'Malatya', 'Manisa', 'Mardin', 'Mersin', 'Muğla', 'Muş',
+  'Nevşehir', 'Niğde', 'Ordu', 'Osmaniye', 'Rize', 'Sakarya',
+  'Samsun', 'Siirt', 'Sinop', 'Sivas', 'Şanlıurfa', 'Şırnak',
+  'Tekirdağ', 'Tokat', 'Trabzon', 'Tunceli', 'Uşak', 'Van',
+  'Yalova', 'Yozgat', 'Zonguldak',
 ];
-
-// ── İL NORMALLEŞTİRME / DOĞRULAMA ──────────────────────────────────
-// İl adlarını Türkçe büyük-küçük harf duyarlılığından bağımsız karşılaştırmak
-// için ortak anahtar üretir. Dart'ın toLowerCase()'i Türkçe İ/I için güvenilir
-// olmadığından bu harfler önce açıkça ASCII karşılıklarına katlanır.
-// Örn: "İSTANBUL", "istanbul", "İstanbul" → "istanbul"; "Iğdır" → "igdir".
-String _ilAnahtar(String s) {
-  const harita = {
-    'ç': 'c', 'Ç': 'c',
-    'ğ': 'g', 'Ğ': 'g',
-    'ı': 'i', 'İ': 'i', 'I': 'i',
-    'ö': 'o', 'Ö': 'o',
-    'ş': 's', 'Ş': 's',
-    'ü': 'u', 'Ü': 'u',
-  };
-  final sb = StringBuffer();
-  for (final ch in s.trim().split('')) {
-    sb.write(harita[ch] ?? ch);
-  }
-  return sb.toString().toLowerCase();
-}
 
 /// Ham (örn. Gemini'den gelen) bir il değerini doğrular ve normalize eder.
 /// Geçerliyse `turkiyeIlleri` içindeki KANONİK adı döndürür, değilse null.
@@ -208,14 +192,12 @@ String? ilDogrula(String? ham) {
   if (ham == null) return null;
   var s = ham.trim();
   if (s.isEmpty) return null;
-  // "Ankara/Polatlı" gibi alt-bölge → ilk parça
   if (s.contains('/')) s = s.split('/').first.trim();
-  // "06 Ankara" gibi baştaki plaka kodu/rakamları temizle
   s = s.replaceFirst(RegExp(r'^\d+\s*'), '').trim();
   if (s.isEmpty) return null;
-  final anahtar = _ilAnahtar(s);
+  final anahtar = turkceAnahtar(s);
   for (final il in turkiyeIlleri) {
-    if (_ilAnahtar(il) == anahtar) return il;
+    if (turkceAnahtar(il) == anahtar) return il;
   }
   return null;
 }
@@ -223,8 +205,8 @@ String? ilDogrula(String? ham) {
 /// İki il adını Türkçe-duyarlı şekilde karşılaştırır. Boş/null → false.
 bool ilEslesir(String? a, String? b) {
   if (a == null || b == null) return false;
-  final ka = _ilAnahtar(a);
-  final kb = _ilAnahtar(b);
+  final ka = turkceAnahtar(a);
+  final kb = turkceAnahtar(b);
   if (ka.isEmpty || kb.isEmpty) return false;
   return ka == kb;
 }

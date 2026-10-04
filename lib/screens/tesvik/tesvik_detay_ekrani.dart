@@ -2,165 +2,103 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/link.dart';
+import '../../core/utils/mesaj.dart';
+import '../../core/utils/tarih.dart';
 import '../../models/tesvik_model.dart';
-import '../../models/profil_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/profil_provider.dart';
-import '../../services/supabase_servisi.dart';
+import '../../providers/takip_provider.dart';
+import '../../services/eslesme_servisi.dart';
+import '../../widgets/ortak.dart';
+import '../kabuk/ana_kabuk.dart';
 
-class TesvikDetayEkrani extends ConsumerWidget {
+class TesvikDetayEkrani extends ConsumerStatefulWidget {
   final TesvikModel tesvik;
-
   const TesvikDetayEkrani({super.key, required this.tesvik});
 
-  int? get _kalanGun {
-    if (tesvik.sonBasvuruTarihi == null) return null;
-    return tesvik.sonBasvuruTarihi!.difference(DateTime.now()).inDays;
-  }
+  @override
+  ConsumerState<TesvikDetayEkrani> createState() => _TesvikDetayEkraniState();
+}
 
-  Color _uyariRengi() {
-    final kalan = _kalanGun;
-    if (kalan == null) return AppTheme.ormanYesili;
-    if (kalan <= 3) return Colors.red.shade600;
-    if (kalan <= 7) return Colors.orange.shade600;
-    if (kalan <= 15) return Colors.amber.shade600;
-    return AppTheme.ormanYesili;
-  }
+class _TesvikDetayEkraniState extends ConsumerState<TesvikDetayEkrani> {
+  bool _ekleniyor = false;
 
-  /// Profilin bu teşvikle gerçek uyumunu hesaplar
-  _UyumSonucu _uyumHesapla(ProfilModel profil) {
-    final nedenler = <String>[];
-    final uyumsuzlar = <String>[];
+  TesvikModel get t => widget.tesvik;
 
-    // 1. İL KONTROLÜ
-    if (tesvik.uygunIller != null && tesvik.uygunIller!.isNotEmpty) {
-      if (tesvik.uygunIller!.any((i) => ilEslesir(i, profil.il))) {
-        nedenler.add('📍 ${profil.il} ilinizde geçerli');
-      } else {
-        uyumsuzlar.add('📍 ${profil.il} ilinizde geçerli değil');
-      }
-    } else {
-      nedenler.add('🇹🇷 Tüm Türkiye\'de geçerli');
+  Future<void> _takibeEkle() async {
+    if (ref.read(kullaniciIdProvider) == null) {
+      await girisEkraniniAc(context);
+      return;
     }
-
-    // 2. ÜRÜN KONTROLÜ
-    if (tesvik.uygunUrunler != null && tesvik.uygunUrunler!.isNotEmpty) {
-      final eslesenUrunler = profil.urunler
-          .where((u) => tesvik.uygunUrunler!.any(
-                (tu) => tu.toLowerCase() == u.toLowerCase(),
-              ))
-          .toList();
-
-      if (eslesenUrunler.isNotEmpty) {
-        nedenler.add('🌾 ${eslesenUrunler.take(2).join(", ")} ürününüzle uyumlu');
-      } else {
-        uyumsuzlar.add('🌾 Ürünlerinizle uyumsuz');
-      }
-    }
-
-    // 3. ETİKET / ÜRETİCİ TİPİ KONTROLÜ
-    if (tesvik.etiketler != null && tesvik.etiketler!.isNotEmpty) {
-      final tipAnahtarlari = {
-        UreticiTipi.arici: ['arıcılık', 'arı', 'bal', 'kovan'],
-        UreticiTipi.hayvancilik: ['hayvancılık', 'hayvan', 'büyükbaş', 'küçükbaş', 'süt'],
-        UreticiTipi.organik: ['organik', 'ekolojik'],
-        UreticiTipi.ciftci: ['tahıl', 'tarım', 'çiftçi', 'bitkisel', 'mazot', 'gübre'],
-      };
-
-      bool tipEslesti = false;
-      for (final tip in profil.ureticiTipleri) {
-        final anahtarlar = tipAnahtarlari[tip] ?? [];
-        if (tesvik.etiketler!.any((e) =>
-            anahtarlar.any((k) => e.toLowerCase().contains(k)))) {
-          tipEslesti = true;
-          nedenler.add('${tip.emoji} ${tip.etiket} kategorisinde destek');
-          break;
-        }
-      }
-
-      // Tip eşleşmedi ama etiketler var — genel program
-      if (!tipEslesti && uyumsuzlar.isEmpty && nedenler.length <= 1) {
-        return _UyumSonucu(
-          uyumlu: false,
-          nedenler: [],
-          uyumsuzlar: ['Bu program sizin üretim tipinize özel değil'],
-          genelProgram: true,
-        );
-      }
-    }
-
-    // Hiç kriter yoksa genel program
-    if (tesvik.uygunUrunler == null &&
-        tesvik.uygunIller == null &&
-        (tesvik.etiketler == null || tesvik.etiketler!.isEmpty)) {
-      return _UyumSonucu(
-        uyumlu: true,
-        nedenler: ['🌐 Tüm üreticilere açık genel destek programı'],
-        uyumsuzlar: [],
-        genelProgram: true,
+    setState(() => _ekleniyor = true);
+    try {
+      final eklendi =
+          await ref.read(takipProvider.notifier).tesvikEkle(t);
+      mesajGoster(
+        eklendi ? 'Takip listene eklendi.' : 'Bu teşvik zaten takip listende.',
+        eylemEtiketi: 'Görüntüle',
+        eylem: () {
+          ref.read(anaSekmeProvider.notifier).state = AnaSekme.takip;
+          if (mounted) {
+            Navigator.of(context).popUntil((r) => r.isFirst);
+          }
+        },
       );
+    } catch (e) {
+      mesajGoster(hataMetni(e), hata: true);
+    } finally {
+      if (mounted) setState(() => _ekleniyor = false);
     }
-
-    return _UyumSonucu(
-      uyumlu: uyumsuzlar.isEmpty,
-      nedenler: nedenler,
-      uyumsuzlar: uyumsuzlar,
-      genelProgram: false,
-    );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final profil = ref.watch(profilProvider).profil;
-    final kalan = _kalanGun;
+    final girisVar = ref.watch(kullaniciIdProvider) != null;
+    final r = context.renkler;
+    final cs = context.cs;
 
     return Scaffold(
-      backgroundColor: AppTheme.cimensoluk,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 200,
             pinned: true,
-            backgroundColor: AppTheme.ormanYesili,
-            foregroundColor: Colors.white,
+            expandedHeight: 210,
+            title: const Text('Teşvik detayı'),
             flexibleSpace: FlexibleSpaceBar(
+              collapseMode: CollapseMode.pin,
               background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppTheme.ormanYesili, AppTheme.ortaYesil],
-                  ),
-                ),
+                decoration: baslikGradyani(context),
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 50, 20, 20),
+                    padding: const EdgeInsets.fromLTRB(20, 60, 20, 18),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        if (tesvik.kurum != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(20),
+                        if (t.kurum != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              t.kurum!.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  letterSpacing: 0.5,
+                                  fontWeight: FontWeight.w700),
                             ),
-                            child: Text(tesvik.kurum!,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
                           ),
-                        const SizedBox(height: 8),
                         Text(
-                          tesvik.isim,
+                          t.isim,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 18,
+                            fontSize: 19,
                             fontWeight: FontWeight.w800,
                             height: 1.3,
                           ),
@@ -172,396 +110,304 @@ class TesvikDetayEkrani extends ConsumerWidget {
               ),
             ),
           ),
-
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Son başvuru tarihi
-                  if (tesvik.sonBasvuruTarihi != null)
-                    _BilgiKarti(
-                      ikon: kalan != null && kalan <= 15 ? '⚠️' : '📅',
-                      baslik: 'Son Başvuru Tarihi',
-                      deger:
-                          '${tesvik.sonBasvuruTarihi!.day}/${tesvik.sonBasvuruTarihi!.month}/${tesvik.sonBasvuruTarihi!.year}',
-                      alt: kalan != null
-                          ? kalan <= 0
-                              ? 'Süre doldu'
-                              : '$kalan gün kaldı'
-                          : null,
-                      renkli: kalan != null && kalan <= 15,
-                      renk: _uyariRengi(),
-                    ),
-
-                  if (tesvik.sonBasvuruTarihi != null)
-                    const SizedBox(height: 12),
-
-                  // Uygun ürünler
-                  if (tesvik.uygunUrunler != null &&
-                      tesvik.uygunUrunler!.isNotEmpty) ...[
-                    _EtiketKarti(
-                      baslik: '🌾 Uygun Ürünler',
-                      etiketler: tesvik.uygunUrunler!,
-                      renk: AppTheme.yaprakAcik,
-                      textRenk: AppTheme.ormanYesili,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Uygun iller
-                  if (tesvik.uygunIller != null &&
-                      tesvik.uygunIller!.isNotEmpty) ...[
-                    _EtiketKarti(
-                      baslik: '📍 Uygun İller',
-                      etiketler: tesvik.uygunIller!,
-                      renk: const Color(0xFFE3F2FD),
-                      textRenk: const Color(0xFF1565C0),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (tesvik.uygunIller == null ||
-                      tesvik.uygunIller!.isEmpty) ...[
-                    _BilgiKarti(
-                      ikon: '🇹🇷',
-                      baslik: 'Kapsam',
-                      deger: 'Tüm Türkiye',
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Profil uyumu — sadece giriş yapılmışsa
-                  if (profil != null) ...[
-                    _ProfilUyumKarti(uyum: _uyumHesapla(profil)),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Etiketler
-                  if (tesvik.etiketler != null &&
-                      tesvik.etiketler!.isNotEmpty) ...[
-                    _EtiketKarti(
-                      baslik: '🏷️ Kategoriler',
-                      etiketler: tesvik.etiketler!,
-                      renk: const Color(0xFFF3E5F5),
-                      textRenk: const Color(0xFF6A1B9A),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-
-                  // Başvur butonu
-                  if (tesvik.basvuruUrl != null)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          final uri = Uri.parse(tesvik.basvuruUrl!);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri,
-                                mode: LaunchMode.externalApplication);
-                          }
-                        },
-                        icon: const Icon(Icons.open_in_new_rounded),
-                        label: const Text(
-                          'Resmi Siteye Git ve Başvur',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w700),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.ormanYesili,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 12),
-
-                  // Takibe ekle
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _basvuruTakipEkle(context),
-                      icon: const Icon(Icons.playlist_add_rounded),
-                      label: const Text('Başvuruya Başladım'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.ormanYesili,
-                        side: const BorderSide(color: AppTheme.acikYesil),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            sliver: SliverList.list(
+              children: [
+                _SonTarihKarti(tesvik: t),
+                const SizedBox(height: 12),
+                if (profil != null)
+                  _UyumKarti(sonuc: EslesmeServisi.degerlendir(t, profil))
+                else
+                  BilgiSeridi(
+                    ikon: Icons.track_changes_rounded,
+                    baslik: girisVar
+                        ? 'Uygunluk için profilini tamamla'
+                        : 'Sana uygun mu? Giriş yap, hemen görelim',
+                    renk: r.bilgi,
+                    zemin: r.bilgiZemin,
+                    eylemEtiketi: girisVar ? null : 'Giriş',
+                    onEylem: girisVar ? null : () => girisEkraniniAc(context),
                   ),
-
-                  const SizedBox(height: 32),
-                ],
-              ),
+                const SizedBox(height: 12),
+                _EtiketBolumu(
+                  baslik: 'Kapsadığı iller',
+                  ikon: Icons.place_outlined,
+                  etiketler: t.uygunIller,
+                  bosMetin: 'Tüm Türkiye',
+                  renk: r.bilgi,
+                  zemin: r.bilgiZemin,
+                ),
+                _EtiketBolumu(
+                  baslik: 'Kapsadığı ürünler',
+                  ikon: Icons.grass_rounded,
+                  etiketler: t.uygunUrunler,
+                  bosMetin: 'Ürün kısıtı belirtilmemiş',
+                  renk: r.basari,
+                  zemin: r.basariZemin,
+                ),
+                if (t.etiketler.isNotEmpty)
+                  _EtiketBolumu(
+                    baslik: 'Kategoriler',
+                    ikon: Icons.sell_outlined,
+                    etiketler: t.etiketler,
+                    renk: cs.onSurfaceVariant,
+                    zemin: cs.surfaceContainer,
+                  ),
+                if (t.minDekar != null && t.minDekar! > 0)
+                  _EtiketBolumu(
+                    baslik: 'Arazi şartı',
+                    ikon: Icons.square_foot_rounded,
+                    etiketler: ['En az ${t.minDekar} dekar'],
+                    renk: r.uyari,
+                    zemin: r.uyariZemin,
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 16, color: cs.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Bilgiler resmi kaynaklardan otomatik derlenir. '
+                        'Başvurmadan önce şartları resmi sayfadan doğrula.',
+                        style:
+                            TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Future<void> _basvuruTakipEkle(BuildContext context) async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Başvuru takibi için giriş yapman gerekiyor.'),
-          backgroundColor: AppTheme.hata,
-        ),
-      );
-      return;
-    }
-
-    try {
-      await SupabaseServisi().analiziKaydet(
-        AnalizSonucu(
-          metin: '## ${tesvik.isim}\n\n'
-              '**Kurum:** ${tesvik.kurum ?? "Belirtilmemiş"}\n\n'
-              '**Son Başvuru:** ${tesvik.sonBasvuruTarihi != null ? "${tesvik.sonBasvuruTarihi!.day}/${tesvik.sonBasvuruTarihi!.month}/${tesvik.sonBasvuruTarihi!.year}" : "Belirtilmemiş"}\n\n'
-              '**Başvuru Linki:** ${tesvik.basvuruUrl ?? "Yok"}\n\n'
-              'Bu teşvik için başvuru süreci başlatıldı.',
-          kritikUyariVar: _kalanGun != null && _kalanGun! <= 15,
-          analizZamani: DateTime.now(),
-        ),
-      );
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('✅ Başvuru takip listesine eklendi!'),
-            backgroundColor: AppTheme.ormanYesili,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerLowest,
+            border: Border(top: BorderSide(color: cs.outlineVariant)),
           ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Hata: $e'),
-            backgroundColor: AppTheme.hata,
-          ),
-        );
-      }
-    }
-  }
-}
-
-// ── UYUM SONUCU MODELİ ───────────────────────────────────────────
-
-class _UyumSonucu {
-  final bool uyumlu;
-  final List<String> nedenler;
-  final List<String> uyumsuzlar;
-  final bool genelProgram;
-
-  const _UyumSonucu({
-    required this.uyumlu,
-    required this.nedenler,
-    required this.uyumsuzlar,
-    required this.genelProgram,
-  });
-}
-
-// ── YARDIMCI WİDGET'LAR ──────────────────────────────────────────
-
-class _ProfilUyumKarti extends StatelessWidget {
-  final _UyumSonucu uyum;
-
-  const _ProfilUyumKarti({required this.uyum});
-
-  @override
-  Widget build(BuildContext context) {
-    final Color arkaRenk = uyum.genelProgram
-        ? const Color(0xFFE3F2FD)
-        : uyum.uyumlu
-            ? AppTheme.yaprakAcik
-            : Colors.red.shade50;
-
-    final Color kenarRenk = uyum.genelProgram
-        ? const Color(0xFF90CAF9)
-        : uyum.uyumlu
-            ? AppTheme.acikYesil
-            : Colors.red.shade200;
-
-    final Color textRenk = uyum.genelProgram
-        ? const Color(0xFF1565C0)
-        : uyum.uyumlu
-            ? AppTheme.ormanYesili
-            : Colors.red.shade700;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: arkaRenk,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kenarRenk),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            uyum.genelProgram
-                ? '🌐 Genel Program'
-                : uyum.uyumlu
-                    ? '🎯 Profilinle Uyumlu'
-                    : '⚠️ Profilinle Uyumsuz',
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: textRenk),
-          ),
-          const SizedBox(height: 8),
-          ...uyum.nedenler.map((n) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    const Text('✅', style: TextStyle(fontSize: 13)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(n,
-                            style: TextStyle(
-                                fontSize: 12, color: textRenk))),
-                  ],
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _ekleniyor ? null : _takibeEkle,
+                  icon: _ekleniyor
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Takibe al'),
                 ),
-              )),
-          ...uyum.uyumsuzlar.map((n) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    const Text('❌', style: TextStyle(fontSize: 13)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(n,
-                            style: TextStyle(
-                                fontSize: 12, color: textRenk))),
-                  ],
+              ),
+              if (t.basvuruUrl != null) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => linkAc(t.basvuruUrl),
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: const Text('Resmi sayfa'),
+                  ),
                 ),
-              )),
-        ],
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _BilgiKarti extends StatelessWidget {
-  final String ikon;
-  final String baslik;
-  final String deger;
-  final String? alt;
-  final bool renkli;
-  final Color renk;
+// ── SON TARİH ───────────────────────────────────────────────
 
-  const _BilgiKarti({
-    required this.ikon,
-    required this.baslik,
-    required this.deger,
-    this.alt,
-    this.renkli = false,
-    this.renk = AppTheme.ormanYesili,
-  });
+class _SonTarihKarti extends StatelessWidget {
+  final TesvikModel tesvik;
+  const _SonTarihKarti({required this.tesvik});
 
   @override
   Widget build(BuildContext context) {
+    final tarih = tesvik.sonBasvuruTarihi;
+    final (renk, zemin, ikon) = sureRenkleri(context, tesvik.sure);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: renkli ? renk.withValues(alpha: 0.08) : AppTheme.kremBeyaz,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: renkli ? renk.withValues(alpha: 0.4) : Colors.green.shade100,
-        ),
+        color: zemin,
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          Text(ikon, style: const TextStyle(fontSize: 28)),
+          Icon(ikon, color: renk, size: 30),
           const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(baslik,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.gri)),
-              Text(deger,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: renkli ? renk : AppTheme.koyu,
-                  )),
-              if (alt != null)
-                Text(alt!,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Son başvuru',
                     style: TextStyle(
-                        fontSize: 12,
-                        color: renkli ? renk : AppTheme.gri,
-                        fontWeight: FontWeight.w600)),
-            ],
+                        fontSize: 12, color: context.cs.onSurfaceVariant)),
+                Text(
+                  tarih == null ? 'Süresiz program' : tarihUzun(tarih),
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: renk),
+                ),
+              ],
+            ),
           ),
+          if (tarih != null)
+            Text(kalanMetni(tarih),
+                style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w800, color: renk)),
         ],
       ),
     );
   }
 }
 
-class _EtiketKarti extends StatelessWidget {
-  final String baslik;
-  final List<String> etiketler;
-  final Color renk;
-  final Color textRenk;
+// ── PROFİL UYUMU ────────────────────────────────────────────
 
-  const _EtiketKarti({
-    required this.baslik,
-    required this.etiketler,
-    required this.renk,
-    required this.textRenk,
-  });
+class _UyumKarti extends StatelessWidget {
+  final EslesmeSonucu sonuc;
+  const _UyumKarti({required this.sonuc});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.kremBeyaz,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.green.shade100),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(baslik,
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.koyu)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: etiketler
-                .map((e) => Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: renk,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(e,
-                          style: TextStyle(
-                              color: textRenk,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600)),
-                    ))
-                .toList(),
+    final r = context.renkler;
+    final renk = sonuc.uygun ? r.basari : r.tehlike;
+    final zemin = sonuc.uygun ? r.basariZemin : r.tehlikeZemin;
+
+    Widget satir(IconData ikon, Color c, String metin) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(ikon, size: 18, color: c),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(metin,
+                      style: const TextStyle(fontSize: 13, height: 1.35))),
+            ],
           ),
-        ],
+        );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    sonuc.uygun ? 'Profiline uygun' : 'Profiline uygun değil',
+                    style: TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w800, color: renk),
+                  ),
+                ),
+                if (sonuc.uygun)
+                  Rozet(metin: '%${sonuc.yuzde} uyum', renk: renk, zemin: zemin),
+              ],
+            ),
+            if (sonuc.uygun) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: sonuc.puan,
+                  minHeight: 6,
+                  color: renk,
+                  backgroundColor: zemin,
+                ),
+              ),
+            ],
+            for (final n in sonuc.nedenler)
+              satir(Icons.check_circle_rounded, r.basari, n),
+            for (final n in sonuc.engeller)
+              satir(Icons.cancel_rounded, r.tehlike, n),
+            for (final n in sonuc.notlar)
+              satir(Icons.info_rounded, r.uyari, n),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── ETİKET BÖLÜMÜ ───────────────────────────────────────────
+
+class _EtiketBolumu extends StatefulWidget {
+  final String baslik;
+  final IconData ikon;
+  final List<String> etiketler;
+  final String? bosMetin;
+  final Color renk;
+  final Color zemin;
+
+  const _EtiketBolumu({
+    required this.baslik,
+    required this.ikon,
+    required this.etiketler,
+    required this.renk,
+    required this.zemin,
+    this.bosMetin,
+  });
+
+  @override
+  State<_EtiketBolumu> createState() => _EtiketBolumuState();
+}
+
+class _EtiketBolumuState extends State<_EtiketBolumu> {
+  static const _sinir = 12;
+  bool _hepsi = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final liste = widget.etiketler.isEmpty && widget.bosMetin != null
+        ? [widget.bosMetin!]
+        : widget.etiketler;
+    final fazla = liste.length > _sinir && !_hepsi;
+    final gosterilen = fazla ? liste.take(_sinir).toList() : liste;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(widget.ikon, size: 18, color: context.cs.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Text(widget.baslik,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w800)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final e in gosterilen)
+                    Rozet(metin: e, renk: widget.renk, zemin: widget.zemin),
+                  if (fazla)
+                    ActionChip(
+                      label: Text('+${liste.length - _sinir} daha'),
+                      onPressed: () => setState(() => _hepsi = true),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

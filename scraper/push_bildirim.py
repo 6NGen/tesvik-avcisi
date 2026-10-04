@@ -4,6 +4,7 @@
 
 import os
 import json
+import re
 import requests
 from datetime import datetime, timedelta
 from supabase import create_client
@@ -113,6 +114,18 @@ def _il_anahtar(s: str) -> str:
     return "".join(harita.get(ch, ch) for ch in s.strip()).lower()
 
 
+def _kelimeler(s: str) -> frozenset:
+    """Normalize kelime kümesi (lib/core/utils/metin.dart → kelimeler portu)."""
+    return frozenset(k for k in re.split(r"[^a-z0-9]+", _il_anahtar(s or "")) if k)
+
+
+def _urun_eslesir(a: str, b: str) -> bool:
+    """urunEslesir portu: biri diğerinin tüm kelimelerini içeriyorsa eşleşir.
+    "Büyükbaş (Süt)" ↔ "büyükbaş", "Organik Bal" ↔ "bal"."""
+    ka, kb = _kelimeler(a), _kelimeler(b)
+    return bool(ka and kb) and (ka >= kb or kb >= ka)
+
+
 def tesvik_profile_uyuyor(tesvik: dict, profil: dict) -> bool:
     # İL: teşvikin uygun illeri varsa profilin ili eşleşmeli (boşsa tüm Türkiye)
     iller = tesvik.get("uygun_iller") or []
@@ -123,8 +136,9 @@ def tesvik_profile_uyuyor(tesvik: dict, profil: dict) -> bool:
     # ÜRÜN: teşvikin uygun ürünleri varsa en az biri profilde olmalı
     urunler = tesvik.get("uygun_urunler") or []
     if urunler:
-        p_urunler = {u.casefold() for u in (profil.get("urunler") or [])}
-        if not p_urunler or not any(u.casefold() in p_urunler for u in urunler):
+        p_urunler = [u for u in (profil.get("urunler") or []) if isinstance(u, str)]
+        if not any(_urun_eslesir(pu, tu) for pu in p_urunler for tu in urunler
+                   if isinstance(tu, str)):
             return False
     return True
 

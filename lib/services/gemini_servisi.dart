@@ -1,6 +1,6 @@
 // lib/services/gemini_servisi.dart
 //
-// Gemini çağrısı artık Supabase Edge Function (belge-analiz) üzerinden yapılır.
+// Gemini çağrısı Supabase Edge Function (belge-analiz) üzerinden yapılır.
 // API anahtarı istemcide TUTULMAZ; prompt ve teşvik listesi sunucuda kurulur (K3).
 
 import 'dart:convert';
@@ -15,7 +15,7 @@ class GeminiServisi {
   GeminiServisi._internal();
 
   // Edge Function payload'ı için makul üst sınır (base64 ~%33 şişer).
-  static const int _maksBoyut = 5 * 1024 * 1024; // 5 MB
+  static const int maksBoyut = 5 * 1024 * 1024; // 5 MB
 
   Future<AnalizSonucu> belgeAnalizeEt({
     required Uint8List gorselBytes,
@@ -26,14 +26,12 @@ class GeminiServisi {
 
     // Giriş zorunlu (Edge Function da ayrıca doğrular).
     if (client.auth.currentUser == null) {
-      throw Exception('Belge analizi için giriş yapmanız gerekiyor.');
+      throw Exception('Belge analizi için giriş yapman gerekiyor.');
     }
-    if (gorselBytes.length > _maksBoyut) {
+    if (gorselBytes.length > maksBoyut) {
       throw Exception(
-          'Dosya çok büyük (en fazla 5 MB). Daha küçük bir görsel/PDF yükleyin.');
+          'Dosya çok büyük (en fazla 5 MB). Daha küçük bir görsel ya da PDF seç.');
     }
-
-    final mimeType = _mimeTypeBelirle(gorselBytes, dosyaAdi ?? '');
 
     final profilGirdi = profil == null
         ? null
@@ -41,7 +39,7 @@ class GeminiServisi {
             'tipler': profil.ureticiTipleri.map((t) => t.etiket).join(' + '),
             'il': profil.il,
             'urunler': profil.urunler,
-            'dekar': profil.dekar?.toInt(),
+            'dekar': profil.dekar?.round(),
             'kovanSayisi': profil.kovanSayisi,
             'hayvanSayisi': profil.hayvanSayisi,
           };
@@ -51,7 +49,7 @@ class GeminiServisi {
         'belge-analiz',
         body: {
           'gorselBase64': base64Encode(gorselBytes),
-          'mimeType': mimeType,
+          'mimeType': mimeTypeBelirle(gorselBytes, dosyaAdi ?? ''),
           'dosyaAdi': dosyaAdi,
           'profil': profilGirdi,
         },
@@ -60,38 +58,41 @@ class GeminiServisi {
       final data = response.data;
       final metin = (data is Map && data['metin'] is String)
           ? data['metin'] as String
-          : 'Analiz sonucu alınamadı.';
-      final cikarilanProfil = _profilJsonCikar(metin);
+          : null;
+      if (metin == null || metin.trim().isEmpty) {
+        throw Exception('Analiz sonucu alınamadı. Tekrar dene.');
+      }
 
       return AnalizSonucu(
         metin: metin,
         kritikUyariVar: metin.contains('KRITIK_UYARI'),
         analizZamani: DateTime.now(),
-        cikarilanProfil: cikarilanProfil,
+        cikarilanProfil: profilJsonCikar(metin),
+        dosyaAdi: dosyaAdi,
       );
     } on FunctionException catch (e) {
       // Edge Function {error: ...} gövdesini kullanıcıya yansıt.
       final detay = (e.details is Map && (e.details as Map)['error'] is String)
           ? (e.details as Map)['error'] as String
-          : 'AI analizi başarısız. Lütfen tekrar deneyin.';
+          : 'AI analizi başarısız. Lütfen tekrar dene.';
       throw Exception(detay);
     }
   }
 
   /// Gemini çıktısından PROFIL_JSON satırını parse eder
-  Map<String, dynamic>? _profilJsonCikar(String metin) {
-    final regex = RegExp(r'PROFIL_JSON:(\{[^\n]+\})');
-    final match = regex.firstMatch(metin);
+  static Map<String, dynamic>? profilJsonCikar(String metin) {
+    final match = RegExp(r'PROFIL_JSON:\s*(\{[^\n]+\})').firstMatch(metin);
     if (match == null) return null;
     try {
-      return jsonDecode(match.group(1)!) as Map<String, dynamic>;
+      final v = jsonDecode(match.group(1)!);
+      return v is Map<String, dynamic> ? v : null;
     } catch (_) {
       return null;
     }
   }
 
-  /// Dosya içeriğine ve adına göre MIME type belirle
-  String _mimeTypeBelirle(Uint8List bytes, String dosyaAdi) {
+  /// Dosya içeriğine (magic bytes) ve adına göre MIME type belirle
+  static String mimeTypeBelirle(Uint8List bytes, String dosyaAdi) {
     if (bytes.length > 4 &&
         bytes[0] == 0x25 && bytes[1] == 0x50 &&
         bytes[2] == 0x44 && bytes[3] == 0x46) {
@@ -103,11 +104,13 @@ class GeminiServisi {
     if (bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
       return 'image/jpeg';
     }
-    final uzanti = dosyaAdi.split('.').last.toLowerCase();
-    switch (uzanti) {
-      case 'pdf': return 'application/pdf';
-      case 'png': return 'image/png';
-      default: return 'image/jpeg';
+    switch (dosyaAdi.split('.').last.toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'image/jpeg';
     }
   }
 }

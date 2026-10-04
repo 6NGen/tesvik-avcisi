@@ -1,66 +1,130 @@
 // lib/screens/takip/takip_ekrani.dart
-// Başvuru takipçisi — durum güncellemeli, timeline görünümlü
+// Başvuru takibi: takibe alınan teşvikler + belge analizleri, durum güncellemeli.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/link.dart';
+import '../../core/utils/mesaj.dart';
+import '../../core/utils/tarih.dart';
 import '../../models/tesvik_model.dart';
-import '../../services/supabase_servisi.dart';
-
-final analizGecmisiProvider =
-    FutureProvider<List<AnalizGecmisi>>((ref) async {
-  return SupabaseServisi().analizGecmisiniGetir();
-});
+import '../../providers/auth_provider.dart';
+import '../../providers/takip_provider.dart';
+import '../../widgets/ortak.dart';
+import '../kabuk/ana_kabuk.dart';
 
 class TakipEkrani extends ConsumerWidget {
   const TakipEkrani({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final gecmisAsync = ref.watch(analizGecmisiProvider);
+    final girisVar = ref.watch(kullaniciIdProvider) != null;
 
     return Scaffold(
-      backgroundColor: AppTheme.cimensoluk,
       appBar: AppBar(
-        title: const Text('Başvuru Takipçisi'),
-        backgroundColor: AppTheme.ormanYesili,
-        foregroundColor: Colors.white,
+        title: const Text('Takibim'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded,
-                color: Colors.white),
-            onPressed: () => ref.invalidate(analizGecmisiProvider),
-          ),
+          if (girisVar)
+            IconButton(
+              tooltip: 'Yenile',
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: () => ref.read(takipProvider.notifier).yenile(),
+            ),
         ],
       ),
-      body: gecmisAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Text('Hata: $e',
-              style: const TextStyle(color: AppTheme.gri)),
-        ),
-        data: (liste) {
-          if (liste.isEmpty) {
-            return const _BosGorunum();
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: liste.length,
-            itemBuilder: (context, i) => _AnalizKarti(
-              analiz: liste[i],
-              index: i,
-              onSil: () async {
-                await SupabaseServisi().analiziSil(liste[i].id);
-                ref.invalidate(analizGecmisiProvider);
-              },
-              onDurumGuncelle: (yeniDurum) async {
-                await SupabaseServisi()
-                    .basvuruDurumunuGuncelle(liste[i].id, yeniDurum);
-                ref.invalidate(analizGecmisiProvider);
-              },
+      body: !girisVar
+          ? DurumGorunumu(
+              ikon: Icons.fact_check_outlined,
+              baslik: 'Başvurularını tek yerden takip et',
+              aciklama:
+                  'Takibe aldığın teşvikler ve belge analizlerin burada listelenir.',
+              butonEtiketi: 'Giriş yap',
+              onButon: () => girisEkraniniAc(context),
+            )
+          : const _TakipListesi(),
+    );
+  }
+}
+
+class _TakipListesi extends ConsumerWidget {
+  const _TakipListesi();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(takipProvider);
+    final notifier = ref.read(takipProvider.notifier);
+
+    if (async.isLoading && !async.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (async.hasError && !async.hasValue) {
+      return DurumGorunumu(
+        ikon: Icons.wifi_off_rounded,
+        baslik: 'Liste yüklenemedi',
+        aciklama: 'İnternet bağlantını kontrol edip tekrar dene.',
+        vurgu: context.renkler.tehlike,
+        butonEtiketi: 'Tekrar dene',
+        onButon: notifier.yenile,
+      );
+    }
+
+    final liste = async.valueOrNull ?? const <AnalizGecmisi>[];
+    if (liste.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: notifier.yenile,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.6,
+              child: DurumGorunumu(
+                ikon: Icons.bookmark_border_rounded,
+                baslik: 'Henüz takip ettiğin bir şey yok',
+                aciklama:
+                    'Bir teşvikin detayında "Takibe al"a dokun ya da belge analizi yap.',
+                butonEtiketi: 'Teşviklere göz at',
+                onButon: () => ref.read(anaSekmeProvider.notifier).state =
+                    AnaSekme.tesvikler,
+              ),
             ),
+          ],
+        ),
+      );
+    }
+
+    final sayilar = {
+      for (final d in BasvuruDurumu.values)
+        d: liste.where((a) => a.basvuruDurumu == d).length,
+    };
+
+    return RefreshIndicator(
+      onRefresh: notifier.yenile,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        itemCount: liste.length + 1,
+        itemBuilder: (context, i) {
+          if (i == 0) return _Ozet(sayilar: sayilar);
+          final kayit = liste[i - 1];
+          return _TakipKarti(
+            key: ValueKey(kayit.id),
+            kayit: kayit,
+            onDurum: (d) async {
+              try {
+                await notifier.durumGuncelle(kayit.id, d);
+              } catch (e) {
+                mesajGoster(hataMetni(e), hata: true);
+              }
+            },
+            onSil: () async {
+              try {
+                await notifier.sil(kayit.id);
+                mesajGoster('Kayıt silindi.');
+              } catch (e) {
+                mesajGoster(hataMetni(e), hata: true);
+              }
+            },
           );
         },
       ),
@@ -68,309 +132,193 @@ class TakipEkrani extends ConsumerWidget {
   }
 }
 
-// ── BAŞVURU DURUMU TİMELINE ──────────────────────────────────────
-
-class _AnalizKarti extends StatelessWidget {
-  final AnalizGecmisi analiz;
-  final int index;
-  final VoidCallback onSil;
-  final Function(String) onDurumGuncelle;
-
-  const _AnalizKarti({
-    required this.analiz,
-    required this.index,
-    required this.onSil,
-    required this.onDurumGuncelle,
-  });
-
-  String _tarih(DateTime dt) =>
-      '${dt.day}/${dt.month}/${dt.year}  '
-      '${dt.hour.toString().padLeft(2, '0')}:'
-      '${dt.minute.toString().padLeft(2, '0')}';
+class _Ozet extends StatelessWidget {
+  final Map<BasvuruDurumu, int> sayilar;
+  const _Ozet({required this.sayilar});
 
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 300 + index * 60),
-      curve: Curves.easeOut,
-      builder: (context, v, child) => Opacity(
-        opacity: v,
-        child: Transform.translate(
-            offset: Offset(0, 16 * (1 - v)), child: child),
-      ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: AppTheme.kremBeyaz,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.green.shade100),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── BAŞLIK ───────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppTheme.yaprakAcik,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Center(
-                        child: Text('📋',
-                            style: TextStyle(fontSize: 22))),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(analiz.belgeOzeti,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                                color: AppTheme.koyu)),
-                        Text(_tarih(analiz.olusturulma),
-                            style: const TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.gri)),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.delete_outline_rounded,
-                        color: Colors.red.shade300, size: 20),
-                    onPressed: () => _silOnayla(context),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── BAŞVURU DURUMU TİMELINE ───────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _DurumTimeline(
-                mevcutDurum: analiz.basvuruDurumu,
-                onDurumSec: onDurumGuncelle,
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── AI SONUCU (genişletilebilir) ──────────────────
-            Theme(
-              data: Theme.of(context)
-                  .copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding:
-                    const EdgeInsets.symmetric(horizontal: 16),
-                childrenPadding:
-                    const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                title: const Text('AI Analiz Sonucu',
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.gri,
-                        fontWeight: FontWeight.w600)),
-                children: [
-                  Container(
-                    constraints:
-                        const BoxConstraints(maxHeight: 300),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.cimensoluk,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Markdown(
-                      data: analiz.aiSonucu
-                          .replaceAll('KRITIK_UYARI', ''),
-                      shrinkWrap: true,
-                      styleSheet: MarkdownStyleSheet(
-                        p: const TextStyle(
-                            fontSize: 13,
-                            height: 1.5,
-                            color: AppTheme.koyu),
-                      ),
-                    ),
-                  ),
-                ],
+    final r = context.renkler;
+    final renkler = {
+      BasvuruDurumu.hazirlaniyor: (r.uyari, r.uyariZemin),
+      BasvuruDurumu.gonderildi: (r.bilgi, r.bilgiZemin),
+      BasvuruDurumu.sonuclandi: (r.basari, r.basariZemin),
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          for (final d in BasvuruDurumu.values) ...[
+            if (d.index > 0) const SizedBox(width: 8),
+            Expanded(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: renkler[d]!.$2,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${sayilar[d]}',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: renkler[d]!.$1)),
+                    Text(d.etiket,
+                        style: TextStyle(
+                            fontSize: 12, color: renkler[d]!.$1)),
+                  ],
+                ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _silOnayla(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Kaydı sil?',
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        content: Text('"${analiz.belgeOzeti}" silinecek.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('İptal'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              onSil();
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.hata),
-            child: const Text('Sil',
-                style: TextStyle(color: Colors.white)),
-          ),
         ],
       ),
     );
   }
 }
 
-// ── DURUM TİMELINE ───────────────────────────────────────────────
+class _TakipKarti extends StatelessWidget {
+  final AnalizGecmisi kayit;
+  final ValueChanged<BasvuruDurumu> onDurum;
+  final VoidCallback onSil;
 
-class _DurumTimeline extends StatelessWidget {
-  final String mevcutDurum;
-  final Function(String) onDurumSec;
-
-  const _DurumTimeline({
-    required this.mevcutDurum,
-    required this.onDurumSec,
+  const _TakipKarti({
+    super.key,
+    required this.kayit,
+    required this.onDurum,
+    required this.onSil,
   });
 
-  static const _adimlar = [
-    ('hazirlaniyor', '📝', 'Hazırlanıyor'),
-    ('gonderildi', '📤', 'Gönderildi'),
-    ('sonuclandi', '✅', 'Sonuçlandı'),
-  ];
-
-  int get _mevcutIndex => _adimlar
-      .indexWhere((a) => a.$1 == mevcutDurum)
-      .clamp(0, 2);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.cimensoluk,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: List.generate(_adimlar.length * 2 - 1, (i) {
-          // Çizgi
-          if (i.isOdd) {
-            final adimIndex = i ~/ 2;
-            return Expanded(
-              child: Container(
-                height: 2,
-                color: adimIndex < _mevcutIndex
-                    ? AppTheme.ormanYesili
-                    : AppTheme.griAcik,
-              ),
-            );
-          }
-
-          // Adım
-          final adimIndex = i ~/ 2;
-          final (deger, emoji, etiket) = _adimlar[adimIndex];
-          final tamamlandi = adimIndex <= _mevcutIndex;
-          final aktif = adimIndex == _mevcutIndex;
-
-          return GestureDetector(
-            onTap: () => onDurumSec(deger),
-            child: Column(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: tamamlandi
-                        ? AppTheme.ormanYesili
-                        : AppTheme.griAcik,
-                    shape: BoxShape.circle,
-                    border: aktif
-                        ? Border.all(
-                            color: AppTheme.bugdayAltini, width: 2)
-                        : null,
-                  ),
-                  child: Center(
-                    child: Text(emoji,
-                        style: const TextStyle(fontSize: 18)),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(etiket,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: aktif
-                          ? FontWeight.w700
-                          : FontWeight.w400,
-                      color: tamamlandi
-                          ? AppTheme.ormanYesili
-                          : AppTheme.gri,
-                    )),
-              ],
-            ),
-          );
-        }),
+  Future<void> _silOnayla(BuildContext context) async {
+    final onay = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kayıt silinsin mi?'),
+        content: Text('"${kayit.belgeOzeti}" takip listenden kaldırılacak.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+                backgroundColor: context.renkler.tehlike,
+                minimumSize: const Size(64, 44)),
+            child: const Text('Sil'),
+          ),
+        ],
       ),
     );
+    if (onay == true) onSil();
   }
-}
-
-// ── BOŞ GÖRÜNÜM ──────────────────────────────────────────────────
-
-class _BosGorunum extends StatelessWidget {
-  const _BosGorunum();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+    final cs = context.cs;
+    final belge = kayit.belgeAnaliziMi;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppTheme.yaprakAcik,
-                shape: BoxShape.circle,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 4, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      belge
+                          ? Icons.description_outlined
+                          : Icons.savings_outlined,
+                      color: cs.onPrimaryContainer,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(kayit.belgeOzeti,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 14)),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${belge ? "Belge analizi" : "Teşvik başvurusu"} · '
+                          '${tarihSaat(kayit.olusturulma)}',
+                          style: TextStyle(
+                              fontSize: 12, color: cs.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Sil',
+                    icon: Icon(Icons.delete_outline_rounded,
+                        color: cs.onSurfaceVariant),
+                    onPressed: () => _silOnayla(context),
+                  ),
+                ],
               ),
-              child: const Center(
-                  child:
-                      Text('📭', style: TextStyle(fontSize: 38))),
             ),
-            const SizedBox(height: 16),
-            const Text('Henüz analiz kaydın yok.',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.koyu)),
-            const SizedBox(height: 8),
-            const Text(
-              'Belge analizi yaptıktan sonra\ngeçmişin burada görünür.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.gri),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: SegmentedButton<BasvuruDurumu>(
+                segments: [
+                  for (final d in BasvuruDurumu.values)
+                    ButtonSegment(value: d, label: Text(d.etiket)),
+                ],
+                selected: {kayit.basvuruDurumu},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => onDurum(s.first),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: WidgetStatePropertyAll(
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ),
+            Theme(
+              data: Theme.of(context)
+                  .copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                title: Text(belge ? 'Analiz sonucu' : 'Ayrıntılar',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurfaceVariant)),
+                children: [
+                  MarkdownBody(
+                    data: analizMetniTemizle(kayit.aiSonucu),
+                    onTapLink: (_, href, _) => linkAc(href),
+                    styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                        .copyWith(
+                      p: const TextStyle(fontSize: 13, height: 1.5),
+                      a: TextStyle(
+                          color: context.renkler.bilgi,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.underline),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

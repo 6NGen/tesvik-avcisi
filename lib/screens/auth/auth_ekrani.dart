@@ -3,237 +3,184 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/link.dart';
+import '../../core/utils/mesaj.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/profil_provider.dart';
+import '../../widgets/ortak.dart';
 
 class AuthEkrani extends ConsumerWidget {
   const AuthEkrani({super.key});
 
+  Future<void> _girisYap(BuildContext context, WidgetRef ref) async {
+    final basarili =
+        await ref.read(authNotifierProvider.notifier).googleIleGirisYap();
+    if (!basarili || !context.mounted) return;
+    // Yeni kullanıcı → kök (profil sihirbazı) görünsün diye yığını temizle;
+    // profili olan kullanıcı geldiği ekrana döner.
+    if (ref.read(profilProvider).profilYok) {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authNotifierProvider);
-    final notifier = ref.read(authNotifierProvider.notifier);
 
-    // Giriş başarılı → kökten sıfırla (profil kontrolü için)
-    ref.listen(authProvider, (onceki, sonraki) {
-    final user = sonraki.value;
-    if (user != null && context.mounted) {
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/',
-      (route) => false,
-      );
-     }
-    });
-    // Hata varsa snackbar göster
     ref.listen(authNotifierProvider, (_, next) {
-      if (next.hata != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(next.hata!),
-          backgroundColor: AppTheme.hata,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-        ));
-      }
+      if (next.hata != null) mesajGoster(next.hata!, hata: true);
     });
 
     return Scaffold(
       backgroundColor: AppTheme.ormanYesili,
-      body: Column(
-        children: [
-          // ── LOGO ALANI ────────────────────────────────────
-          Expanded(
-            flex: 3,
-            child: SafeArea(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: AppTheme.bugdayAltini, width: 2.5),
-                    ),
-                    child: const Center(
-                      child: Text('🌾',
-                          style: TextStyle(fontSize: 50)),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text('Teşvik Avcısı',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      )),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppTheme.bugdayAltini.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: AppTheme.bugdayAltini
-                              .withValues(alpha: 0.4)),
-                    ),
-                    child: const Text('Çiftçinin hibe asistanı',
-                        style: TextStyle(
-                          color: AppTheme.bugdayAltini,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        )),
-                  ),
-                  const SizedBox(height: 32),
-                  _OzellikSatiri(
-                      emoji: '🎯',
-                      metin: 'Sana özel hibe eşleştirme'),
-                  const SizedBox(height: 10),
-                  _OzellikSatiri(
-                      emoji: '📋',
-                      metin: 'Başvuru sürecini takip et'),
-                  const SizedBox(height: 10),
-                  _OzellikSatiri(
-                      emoji: '⏰',
-                      metin: 'Son tarih hatırlatmaları'),
-                ],
-              ),
-            ),
-          ),
-
-          // ── GİRİŞ KARTI ──────────────────────────────────
-          Expanded(
-            flex: 2,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-              decoration: const BoxDecoration(
-                color: AppTheme.kremBeyaz,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(32),
-                  topRight: Radius.circular(32),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('Hemen Başla',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.koyu,
-                      )),
-                  const SizedBox(height: 6),
-                  const Text(
-                      'Google hesabınla saniyeler içinde giriş yap.',
-                      style: TextStyle(
-                          color: AppTheme.gri, fontSize: 14)),
-                  const SizedBox(height: 24),
-
-                  // Google butonu
-                  SizedBox(
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: authState.yukleniyor
-                          ? null
-                          : notifier.googleIleGirisYap,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppTheme.koyu,
-                        elevation: 2,
-                        side: BorderSide(
-                            color: Colors.grey.shade200),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+      appBar: AppBar(backgroundColor: Colors.transparent),
+      extendBodyBehindAppBar: true,
+      body: Container(
+        decoration: baslikGradyani(context),
+        child: SafeArea(
+          bottom: false,
+          child: LayoutBuilder(
+            builder: (context, kisit) => SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: kisit.maxHeight),
+                child: IntrinsicHeight(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 32),
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: AppTheme.bugdayAltini, width: 2.5),
+                        ),
+                        child: const Icon(Icons.agriculture_rounded,
+                            size: 48, color: Colors.white),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text('Teşvik Avcısı',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          )),
+                      const SizedBox(height: 6),
+                      const Text('Çiftçinin hibe asistanı',
+                          style: TextStyle(
+                            color: AppTheme.bugdayAltini,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          )),
+                      const SizedBox(height: 28),
+                      const _Ozellik(
+                          ikon: Icons.track_changes_rounded,
+                          metin: 'Profiline uygun hibeleri otomatik bul'),
+                      const _Ozellik(
+                          ikon: Icons.fact_check_outlined,
+                          metin: 'Başvurularını tek yerden takip et'),
+                      const _Ozellik(
+                          ikon: Icons.alarm_rounded,
+                          metin: 'Son tarihler yaklaşınca hatırlatma al'),
+                      const _Ozellik(
+                          ikon: Icons.document_scanner_outlined,
+                          metin: 'ÇKS belgeni yapay zekâyla analiz et'),
+                      const Spacer(),
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.fromLTRB(24, 28, 24,
+                            20 + MediaQuery.viewPaddingOf(context).bottom),
+                        decoration: BoxDecoration(
+                          color: context.cs.surface,
+                          borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(28)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: authState.yukleniyor
+                                  ? null
+                                  : () => _girisYap(context, ref),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(64, 56),
+                              ),
+                              icon: authState.yukleniyor
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2.5),
+                                    )
+                                  : const Text('G',
+                                      style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w900)),
+                              label: const Text('Google ile devam et'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: authState.yukleniyor
+                                  ? null
+                                  : () => Navigator.of(context).pop(),
+                              child: const Text('Şimdilik misafir olarak devam et'),
+                            ),
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onTap: () => linkAc(gizlilikUrl),
+                              child: Text(
+                                'Devam ederek tarımsal bilgilerinin hibe '
+                                'eşleştirmesi için kullanılmasını kabul edersin. '
+                                'Gizlilik politikası',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: context.cs.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: authState.yukleniyor
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: AppTheme.ormanYesili,
-                              ),
-                            )
-                          : Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center,
-                              children: [
-                                Image.network(
-                                  'https://www.google.com/favicon.ico',
-                                  width: 24,
-                                  height: 24,
-                                  errorBuilder: (_, _, _) =>
-                                      const Text('G',
-                                          style: TextStyle(
-                                              fontSize: 20,
-                                              fontWeight:
-                                                  FontWeight.w700,
-                                              color: Colors.blue)),
-                                ),
-                                const SizedBox(width: 12),
-                                const Text('Google ile Giriş Yap',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    )),
-                              ],
-                            ),
-                    ),
+                    ],
                   ),
-
-                  const SizedBox(height: 12),
-
-                  // Misafir devam
-                  TextButton(
-                    onPressed: authState.yukleniyor
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    child: const Text('Giriş yapmadan devam et →',
-                        style: TextStyle(color: AppTheme.gri)),
-                  ),
-
-                  const Spacer(),
-                  const Text(
-                    'Giriş yaparak kişisel verilerinizin '
-                    'hibe eşleştirme amacıyla kullanılmasını kabul edersiniz.',
-                    textAlign: TextAlign.center,
-                    style:
-                        TextStyle(color: AppTheme.gri, fontSize: 10),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _OzellikSatiri extends StatelessWidget {
-  final String emoji;
+class _Ozellik extends StatelessWidget {
+  final IconData ikon;
   final String metin;
-  const _OzellikSatiri({required this.emoji, required this.metin});
+  const _Ozellik({required this.ikon, required this.metin});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 18)),
-        const SizedBox(width: 10),
-        Text(metin,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            )),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 6),
+      child: Row(
+        children: [
+          Icon(ikon, color: AppTheme.bugdayAltini, size: 20),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(metin,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                )),
+          ),
+        ],
+      ),
     );
   }
 }

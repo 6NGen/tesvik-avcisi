@@ -47,3 +47,8 @@ app.*.map.json
 # Supabase CLI geçici dosyaları
 supabase/.temp/
 supabase/.branches/
+
+# İmza anahtarları — ASLA commit etme
+*.jks
+*.keystore
+key.properties

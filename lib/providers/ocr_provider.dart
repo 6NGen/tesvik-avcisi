@@ -2,16 +2,14 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/utils/mesaj.dart';
 import '../models/tesvik_model.dart';
-import '../models/profil_model.dart';
 import '../services/gemini_servisi.dart';
+import '../services/profil_birlestirme.dart';
 import '../services/supabase_servisi.dart';
+import 'auth_provider.dart';
 import 'profil_provider.dart';
-
-// copyWith'te "geçilmedi" ile "null'a ayarla"yı ayırmak için sentinel.
-// Bununla copyWith(hata: null) hatayı gerçekten temizleyebilir.
-const Object _kBos = Object();
+import 'takip_provider.dart';
 
 class OcrState {
   final bool yukleniyor;
@@ -19,6 +17,7 @@ class OcrState {
   final String? hata;
   final String? dosyaAdi;
   final bool profilGuncellendi; // analiz sonrası profil güncellendiyse true
+  final bool kaydedildi; // takip listesine kaydedildi mi
 
   const OcrState({
     this.yukleniyor = false,
@@ -26,24 +25,10 @@ class OcrState {
     this.hata,
     this.dosyaAdi,
     this.profilGuncellendi = false,
+    this.kaydedildi = false,
   });
 
   bool get bos => !yukleniyor && sonuc == null && hata == null;
-
-  OcrState copyWith({
-    bool? yukleniyor,
-    Object? sonuc = _kBos,
-    Object? hata = _kBos,
-    Object? dosyaAdi = _kBos,
-    bool? profilGuncellendi,
-  }) =>
-      OcrState(
-        yukleniyor: yukleniyor ?? this.yukleniyor,
-        sonuc: identical(sonuc, _kBos) ? this.sonuc : sonuc as AnalizSonucu?,
-        hata: identical(hata, _kBos) ? this.hata : hata as String?,
-        dosyaAdi: identical(dosyaAdi, _kBos) ? this.dosyaAdi : dosyaAdi as String?,
-        profilGuncellendi: profilGuncellendi ?? this.profilGuncellendi,
-      );
 }
 
 class OcrNotifier extends StateNotifier<OcrState> {
@@ -53,157 +38,89 @@ class OcrNotifier extends StateNotifier<OcrState> {
 
   OcrNotifier(this._ref) : super(const OcrState());
 
-  /// Dosya seç, Gemini ile analiz et, profili otomatik güncelle
+  /// Dosya seç, Gemini ile analiz et, takibe kaydet, profili güncelle.
   Future<void> dosyaSecVeAnalizeEt() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-      withData: true,
-    );
+    if (state.yukleniyor) return;
 
-    if (result == null || result.files.isEmpty) return;
+    final FilePickerResult? secim;
+    try {
+      secim = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+    } catch (_) {
+      state = const OcrState(hata: 'Dosya seçici açılamadı.');
+      return;
+    }
+    if (secim == null || secim.files.isEmpty) return;
 
-    final dosya = result.files.first;
+    final dosya = secim.files.first;
     final bytes = dosya.bytes;
-
     if (bytes == null) {
-      state = OcrState(hata: 'Dosya okunamadı. Tekrar deneyin.');
+      state = const OcrState(hata: 'Dosya okunamadı. Tekrar dene.');
+      return;
+    }
+    if (bytes.length > GeminiServisi.maksBoyut) {
+      state = const OcrState(
+          hata: 'Dosya çok büyük (en fazla 5 MB). Daha küçük bir dosya seç.');
       return;
     }
 
-    state = state.copyWith(
-      yukleniyor: true,
-      hata: null,
-      dosyaAdi: dosya.name,
-      profilGuncellendi: false,
-    );
+    final userId = _ref.read(kullaniciIdProvider);
+    state = OcrState(yukleniyor: true, dosyaAdi: dosya.name);
 
     try {
-      // Teşvik listesini ve prompt'u artık Edge Function (belge-analiz) sunucuda
-      // kuruyor; istemci yalnızca görsel + profil gönderir.
-      final ProfilModel? mevcutProfil = _ref.read(profilProvider).profil;
-
+      final mevcutProfil = _ref.read(profilProvider).profil;
       final sonuc = await _gemini.belgeAnalizeEt(
         gorselBytes: bytes,
         profil: mevcutProfil,
         dosyaAdi: dosya.name,
       );
+      // Analiz sürerken oturum değiştiyse sonucu bırak.
+      if (!mounted || _ref.read(kullaniciIdProvider) != userId) return;
 
-      await _db.analiziKaydet(sonuc);
+      var kaydedildi = false;
+      try {
+        await _db.analiziKaydet(sonuc);
+        kaydedildi = true;
+        _ref.invalidate(takipProvider);
+      } catch (_) {/* analiz sonucu yine de gösterilir */}
 
-      // Profil otomatik güncelleme
-      final bool guncellendi = await _profilGuncelle(sonuc, mevcutProfil);
+      final guncellendi = await _profilGuncelle(sonuc, userId);
 
-      state = state.copyWith(
-        yukleniyor: false,
+      if (!mounted) return;
+      state = OcrState(
         sonuc: sonuc,
+        dosyaAdi: dosya.name,
         profilGuncellendi: guncellendi,
+        kaydedildi: kaydedildi,
       );
     } catch (e) {
-      state = OcrState(hata: e.toString());
+      if (!mounted) return;
+      state = OcrState(hata: hataMetni(e), dosyaAdi: dosya.name);
     }
   }
 
-  /// Gemini'den çekilen profil verisiyle mevcut profili güncelle
-  Future<bool> _profilGuncelle(AnalizSonucu sonuc, ProfilModel? mevcutProfil) async {
+  Future<bool> _profilGuncelle(AnalizSonucu sonuc, String? userId) async {
     final veri = sonuc.cikarilanProfil;
-    if (veri == null) return false;
-
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return false;
-
-    try {
-      final ProfilModel yeniProfil;
-
-      if (mevcutProfil != null) {
-        // Mevcut profil var → belgeden gelen verilerle birleştir
-        yeniProfil = _profilBirlestir(mevcutProfil, veri);
-      } else {
-        // Profil yok → belgeden oluştur
-        final olusturulan = _profilOlustur(user.id, veri);
-        if (olusturulan == null) return false;
-        yeniProfil = olusturulan;
-      }
-
-      return await _ref.read(profilProvider.notifier).profilKaydet(yeniProfil);
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Mevcut profil ile belge verisini birleştir
-  /// Belgede bulunan değerler öncelikli, bulunamayanlar mevcut değerde kalır
-  ProfilModel _profilBirlestir(ProfilModel mevcut, Map<String, dynamic> veri) {
-    // il: belgede GEÇERLİ bir il varsa güncelle, yoksa mevcut değeri koru.
-    // Bozuk/tanınmayan değer profile yazılmaz (eşleşmeyi bozar).
-    final il = ilDogrula(veri['il'] as String?) ?? mevcut.il;
-
-    // uretici_tipleri: belgede varsa güncelle
-    final tipler = _tiplerCikar(veri) ?? mevcut.ureticiTipleri;
-
-    // urunler: belgede varsa güncelle
-    final urunler = _urunlerCikar(veri) ?? mevcut.urunler;
-
-    // sayısal alanlar: belgede varsa güncelle, yoksa mevcut değer
-    final dekar = (veri['dekar'] as num?)?.toDouble() ?? mevcut.dekar;
-    final kovanSayisi = veri['kovan_sayisi'] as int? ?? mevcut.kovanSayisi;
-    final hayvanSayisi = veri['hayvan_sayisi'] as int? ?? mevcut.hayvanSayisi;
-
-    return ProfilModel(
-      userId: mevcut.userId,
-      ureticiTipleri: tipler,
-      il: il,
-      urunler: urunler,
-      dekar: dekar,
-      kovanSayisi: kovanSayisi,
-      hayvanSayisi: hayvanSayisi,
-    );
-  }
-
-  /// Belgeden sıfırdan profil oluştur (en az il veya tip olmalı)
-  ProfilModel? _profilOlustur(String userId, Map<String, dynamic> veri) {
-    final il = ilDogrula(veri['il'] as String?) ?? '';
-    final tipler = _tiplerCikar(veri) ?? [UreticiTipi.ciftci];
-    final urunler = _urunlerCikar(veri) ?? [];
-
-    // Minimum veri yoksa oluşturma
-    if (il.isEmpty && urunler.isEmpty) return null;
-
-    return ProfilModel(
-      userId: userId,
-      ureticiTipleri: tipler,
-      il: il,
-      urunler: urunler,
-      dekar: (veri['dekar'] as num?)?.toDouble(),
-      kovanSayisi: veri['kovan_sayisi'] as int?,
-      hayvanSayisi: veri['hayvan_sayisi'] as int?,
-    );
-  }
-
-  /// JSON'dan UreticiTipi listesi çıkar
-  List<UreticiTipi>? _tiplerCikar(Map<String, dynamic> veri) {
-    final raw = veri['uretici_tipleri'];
-    if (raw == null) return null;
-    final liste = (raw as List<dynamic>)
-        .map((t) => UreticiTipi.values.firstWhere(
-              (e) => e.name == t.toString(),
-              orElse: () => UreticiTipi.ciftci,
-            ))
-        .toList();
-    return liste.isEmpty ? null : liste;
-  }
-
-  /// JSON'dan ürün listesi çıkar
-  List<String>? _urunlerCikar(Map<String, dynamic> veri) {
-    final raw = veri['urunler'];
-    if (raw == null) return null;
-    final liste = List<String>.from(raw as List<dynamic>);
-    return liste.isEmpty ? null : liste;
+    if (veri == null || userId == null) return false;
+    final mevcut = _ref.read(profilProvider).profil;
+    final yeni = mevcut != null
+        ? ProfilBirlestirme.birlestir(mevcut, veri)
+        : ProfilBirlestirme.olustur(userId, veri);
+    if (yeni == null) return false;
+    return _ref.read(profilProvider.notifier).profilKaydet(yeni);
   }
 
   void sifirla() => state = const OcrState();
 }
 
-final ocrProvider = StateNotifierProvider<OcrNotifier, OcrState>(
-  (ref) => OcrNotifier(ref),
-);
+final ocrProvider = StateNotifierProvider<OcrNotifier, OcrState>((ref) {
+  final notifier = OcrNotifier(ref);
+  // Kullanıcı değişince (çıkış / başka hesap) önceki analiz ekranda kalmasın.
+  ref.listen<String?>(kullaniciIdProvider, (onceki, sonraki) {
+    if (onceki != sonraki) notifier.sifirla();
+  });
+  return notifier;
+});

@@ -1,125 +1,153 @@
 // lib/services/eslesme_servisi.dart
-// Profil bilgisiyle teşvikleri eşleştiren motor.
-// Puan sistemi: İl + Ürün + Tip + Miktar → toplam skor
+//
+// Profil ↔ teşvik eşleştirme motoru. Ana liste, detay ekranı ve testler bu
+// TEK kaynağı kullanır (eskiden detay ekranında farklı kurallı ikinci bir
+// kopya vardı, iki ekran birbiriyle çelişiyordu).
+//
+// Kurallar:
+//   • İl    : teşvikin il listesi varsa profilin ili içinde olmalı (ELER).
+//   • Ürün  : teşvikin ürün listesi varsa en az bir ürün eşleşmeli (ELER).
+//   • Tip   : etiketler üretici tipine uyuyorsa puan; uymuyorsa yalnızca not.
+//   • Dekar : asgari dekar şartı varsa bilgi notu / puan.
+// Python portu: scraper/push_bildirim.py → tesvik_profile_uyuyor (il + ürün).
 
-import '../models/tesvik_model.dart';
+import '../core/utils/metin.dart';
 import '../models/profil_model.dart';
+import '../models/tesvik_model.dart';
 
 class EslesmeSonucu {
   final TesvikModel tesvik;
-  final double puan;       // 0.0 - 1.0
-  final List<String> nedenler; // Neden uyuyor
+  final bool uygun; // eleyici kuralların hepsini geçti mi
+  final double puan; // 0.0 – 1.0
+  final List<String> nedenler; // ✓ uyan yönler
+  final List<String> engeller; // ✗ eleyen yönler
+  final List<String> notlar; // ℹ eleme yapmayan uyarılar
 
   const EslesmeSonucu({
     required this.tesvik,
+    required this.uygun,
     required this.puan,
     required this.nedenler,
+    required this.engeller,
+    required this.notlar,
   });
+
+  int get yuzde => (puan * 100).round();
 }
 
 class EslesmeServisi {
-  /// Profil + teşvik listesini karşılaştır, puanlı sonuç döndür
-  static List<EslesmeSonucu> eslestir({
-    required List<TesvikModel> tesvikler,
-    required ProfilModel profil,
-  }) {
-    final sonuclar = <EslesmeSonucu>[];
+  EslesmeServisi._();
 
-    for (final tesvik in tesvikler) {
-      final sonuc = _puanla(tesvik: tesvik, profil: profil);
-      if (sonuc != null) sonuclar.add(sonuc);
-    }
+  static const _maks = 0.30 + 0.30 + 0.20 + 0.10;
 
-    // Puana göre büyükten küçüğe sırala
-    sonuclar.sort((a, b) => b.puan.compareTo(a.puan));
-    return sonuclar;
-  }
+  /// Tip → etiket anahtar kelimeleri (normalize, bkz. anahtarKelimeEslesir).
+  static const Map<UreticiTipi, List<String>> tipAnahtarlari = {
+    UreticiTipi.arici: ['ari', 'arici', 'bal', 'kovan', 'polen', 'propolis'],
+    UreticiTipi.hayvancilik: [
+      'hayvan', 'buyukbas', 'kucukbas', 'sut', 'besi', 'koyun', 'keci',
+      'sigir', 'kumes', 'yem', 'balik', 'ahir',
+    ],
+    UreticiTipi.organik: ['organik', 'ekolojik'],
+    UreticiTipi.ciftci: [
+      'tarim', 'ciftci', 'bitkisel', 'tahil', 'tohum', 'sulama', 'mazot',
+      'gubre', 'sera', 'fide', 'meyve', 'sebze', 'hasat', 'makine',
+    ],
+  };
 
-  static EslesmeSonucu? _puanla({
-    required TesvikModel tesvik,
-    required ProfilModel profil,
-  }) {
-    double puan = 0.0;
+  /// Bir teşviki profile göre değerlendirir (elense bile sonuç döner).
+  static EslesmeSonucu degerlendir(TesvikModel tesvik, ProfilModel profil) {
+    double puan = 0;
+    var uygun = true;
     final nedenler = <String>[];
+    final engeller = <String>[];
+    final notlar = <String>[];
 
-    // ── 1. İL KONTROLÜ ─────────────────────────────────────
-    if (tesvik.uygunIller != null && tesvik.uygunIller!.isNotEmpty) {
-      if (!tesvik.uygunIller!.any((i) => ilEslesir(i, profil.il))) {
-        return null; // Bu ile uygun değil, tamamen elendi
+    // 1. İL
+    if (tesvik.uygunIller.isNotEmpty) {
+      if (tesvik.uygunIller.any((i) => ilEslesir(i, profil.il))) {
+        puan += 0.30;
+        nedenler.add('${profil.il} ilinde geçerli');
+      } else {
+        uygun = false;
+        engeller.add(profil.il.isEmpty
+            ? 'Belirli illere özel (profilinde il yok)'
+            : '${profil.il} ilinde geçerli değil');
       }
-      puan += 0.30;
-      nedenler.add('📍 ${profil.il} iline özel destek');
     } else {
-      puan += 0.15; // Tüm Türkiye için geçerli
-      nedenler.add('🇹🇷 Tüm Türkiye\'de geçerli');
+      puan += 0.15;
+      nedenler.add('Tüm Türkiye\'de geçerli');
     }
 
-    // ── 2. ÜRÜN KONTROLÜ ────────────────────────────────────
-    if (tesvik.uygunUrunler != null && tesvik.uygunUrunler!.isNotEmpty) {
-      final eslesenUrunler = profil.urunler
-          .where((u) => tesvik.uygunUrunler!.any(
-                (tu) => tu.toLowerCase() == u.toLowerCase(),
-              ))
+    // 2. ÜRÜN
+    if (tesvik.uygunUrunler.isNotEmpty) {
+      final eslesen = profil.urunler
+          .where((u) => tesvik.uygunUrunler.any((tu) => urunEslesir(u, tu)))
           .toList();
-
-      if (eslesenUrunler.isEmpty) {
-        return null; // Hiçbir ürün eşleşmedi, elendi
+      if (eslesen.isNotEmpty) {
+        puan += 0.30;
+        nedenler.add('Ürünlerinle uyumlu: ${eslesen.take(3).join(", ")}');
+      } else {
+        uygun = false;
+        engeller.add('Ürünlerinden hiçbiri kapsamda değil');
       }
-      puan += 0.30;
-      nedenler.add('🌾 ${eslesenUrunler.take(2).join(", ")} ürünlerinize uygun');
     } else {
-      puan += 0.15; // Tüm ürünler için geçerli
+      puan += 0.15;
     }
 
-    // ── 3. ÜRETİCİ TİPİ KONTROLÜ ───────────────────────────
-    if (tesvik.etiketler != null && tesvik.etiketler!.isNotEmpty) {
-      bool tipEslesti = false;
-
-      for (final tip in profil.ureticiTipleri) {
-        final tipAnahtarlari = _tipAnahtarlari(tip);
-        if (tesvik.etiketler!.any((e) =>
-            tipAnahtarlari.any((k) => e.toLowerCase().contains(k)))) {
-          tipEslesti = true;
-          puan += 0.20;
-          nedenler.add('${tip.emoji} ${tip.etiket} desteği');
-          break;
-        }
+    // 3. ÜRETİCİ TİPİ (eleme yapmaz)
+    if (tesvik.etiketler.isNotEmpty) {
+      final etiketKelimeleri = tesvik.etiketler.expand(kelimeler).toSet();
+      final eslesenTip = profil.ureticiTipleri.where((tip) {
+        final anahtarlar = tipAnahtarlari[tip] ?? const [];
+        return etiketKelimeleri
+            .any((k) => anahtarlar.any((a) => anahtarKelimeEslesir(k, a)));
+      }).toList();
+      if (eslesenTip.isNotEmpty) {
+        puan += 0.20;
+        nedenler.add(
+            '${eslesenTip.map((t) => t.etiket).join(" / ")} kategorisinde destek');
+      } else {
+        puan += 0.05;
+        notlar.add('Program üretim tipine özel görünmüyor');
       }
-
-      // Tip eşleşmesi yoksa düşük puan ver ama eleme
-      if (!tipEslesti) puan += 0.05;
     } else {
       puan += 0.10;
     }
 
-    // ── 4. MİKTAR KONTROLÜ ──────────────────────────────────
-    if (tesvik.minDekar != null && profil.dekar != null) {
-      if (profil.dekar! >= tesvik.minDekar!) {
+    // 4. ARAZİ (eleme yapmaz — veri her zaman güvenilir değil)
+    final minDekar = tesvik.minDekar;
+    if (minDekar != null && minDekar > 0) {
+      final dekar = profil.dekar;
+      if (dekar == null) {
+        notlar.add('En az $minDekar dekar arazi şartı olabilir');
+      } else if (dekar >= minDekar) {
         puan += 0.10;
-        nedenler.add('📐 Arazi büyüklüğünüz uygun');
+        nedenler.add('Arazi büyüklüğün uygun ($minDekar+ dekar)');
+      } else {
+        notlar.add('En az $minDekar dekar isteniyor (sende ${dekar.round()})');
       }
     }
 
-    // Minimum puan eşiği — çok düşük puanlıları gösterme
-    if (puan < 0.20) return null;
-
     return EslesmeSonucu(
       tesvik: tesvik,
-      puan: puan.clamp(0.0, 1.0),
+      uygun: uygun,
+      puan: (puan / _maks).clamp(0.0, 1.0),
       nedenler: nedenler,
+      engeller: engeller,
+      notlar: notlar,
     );
   }
 
-  static List<String> _tipAnahtarlari(UreticiTipi tip) {
-    switch (tip) {
-      case UreticiTipi.arici:
-        return ['arıcılık', 'arı', 'bal', 'kovan'];
-      case UreticiTipi.hayvancilik:
-        return ['hayvancılık', 'hayvan', 'büyükbaş', 'küçükbaş', 'süt'];
-      case UreticiTipi.organik:
-        return ['organik', 'ekolojik'];
-      case UreticiTipi.ciftci:
-        return ['tahıl', 'tarım', 'çiftçi', 'bitkisel'];
-    }
+  /// Yalnızca uygun teşvikler, puana göre azalan.
+  static List<EslesmeSonucu> eslestir({
+    required List<TesvikModel> tesvikler,
+    required ProfilModel profil,
+  }) {
+    final sonuc = tesvikler
+        .map((t) => degerlendir(t, profil))
+        .where((s) => s.uygun)
+        .toList()
+      ..sort((a, b) => b.puan.compareTo(a.puan));
+    return sonuc;
   }
 }
