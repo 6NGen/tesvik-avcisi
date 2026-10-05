@@ -255,8 +255,22 @@ KOSGEB_KARA_LISTE = [
 ]
 
 KOSGEB_ANAHTAR = [
-    "destek", "hibe", "program", "teşvik", "kredi", "finansman"
+    "destek", "hibe", "program", "teşvik", "kredi", "finansman", "fon"
 ]
+
+
+def kosgeb_baslik_gecerli(baslik: str) -> bool:
+    """Yalnızca destek programı başlıklarını kabul eder.
+
+    /destekdetay/ altında gazete ilanları ("Star Gazetesi"), e-dergiler
+    ("2020 Ocak E-Dergi") ve finansal oran sayfaları ("FAVÖK Oranı") da var.
+    Anahtar kelime eskiden SAYFA METNİNDE aranıyordu; menüde her sayfada
+    "destek" geçtiği için hepsi teşvik diye kaydediliyordu. Artık başlıkta.
+    """
+    if not baslik or "&nbsp" in baslik or len(baslik.strip()) < 10:
+        return False
+    b = baslik.replace("İ", "i").replace("I", "ı").lower()
+    return any(k in b for k in KOSGEB_ANAHTAR)
 
 
 def kosgeb_tara(db: Client, mevcut: set) -> int:
@@ -291,7 +305,9 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
 
     print(f"  {len(linkler)} program linki bulundu")
 
-    for link in list(linkler)[:20]:
+    # Sıralı ve geniş limit: gerçek programlar her çalışmada taranır
+    # (eskiden rastgele 20 link seçiliyordu).
+    for link in sorted(linkler)[:120]:
         try:
             pr = requests.get(link, headers=HEADERS, timeout=60)
             pr.raise_for_status()
@@ -310,12 +326,10 @@ def kosgeb_tara(db: Client, mevcut: set) -> int:
                 if t:
                     baslik = t.get_text(strip=True).split(" - ")[0].strip()
 
-            if not baslik or len(baslik) < 10:
+            if not kosgeb_baslik_gecerli(baslik):
                 continue
 
             sayfa_metin = psoup.get_text(separator=" ", strip=True).lower()
-            if not any(k in sayfa_metin for k in KOSGEB_ANAHTAR):
-                continue
 
             son_tarih = None
             tarih_m = re.search(r'(\d{1,2})\.(\d{1,2})\.(20\d{2})', sayfa_metin)
