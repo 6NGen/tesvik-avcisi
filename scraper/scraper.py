@@ -255,7 +255,7 @@ KOSGEB_KARA_LISTE = [
 ]
 
 KOSGEB_ANAHTAR = [
-    "destek", "hibe", "program", "teşvik", "kredi", "finansman", "fon"
+    "destek", "desteğ", "hibe", "program", "teşvik", "kredi", "finansman", "fon"
 ]
 
 

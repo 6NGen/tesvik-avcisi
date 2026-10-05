@@ -12,7 +12,7 @@ from tesvikler
 where kurum = 'KOSGEB'
   and aktif
   and (
-    isim !~* '(destek|program|kredi|hibe|teşvik|tesvik|finansman|fon)'
+    isim !~* '(destek|desteğ|program|kredi|hibe|teşvik|tesvik|finansman|fon)'
     or isim like '%&nbsp%'
   )
 order by isim;
@@ -27,7 +27,7 @@ set aktif = false, guncelleme = now()
 where kurum = 'KOSGEB'
   and aktif
   and (
-    isim !~* '(destek|program|kredi|hibe|teşvik|tesvik|finansman|fon)'
+    isim !~* '(destek|desteğ|program|kredi|hibe|teşvik|tesvik|finansman|fon)'
     or isim like '%&nbsp%'
     or basvuru_url like '%/destekdetay/9414/yapay-zek-kredi-pr%'
   );
