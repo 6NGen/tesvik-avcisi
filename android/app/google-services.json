@@ -58,6 +58,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "268638465842-5v9oen8u2j7gh1g9c3le9qs02hp040cp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tesvikavcisi.app",
+            "certificate_hash": "a68ab483ff36df70ffd1ba7913bfeafcc4f62488"
+          }
+        },
+        {
+          "client_id": "268638465842-u7tfdp586ajl0tfch8tgo9f9s87lamc5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tesvikavcisi.app",
+            "certificate_hash": "97c08cccb816a9bd9888f0f57d1bcb4d0754b7ca"
+          }
+        },
+        {
           "client_id": "268638465842-v4l3iuevec4rtkuh4oei6hjak89p0gio.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
